@@ -1,11 +1,23 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
+import ErrorBoundary from './ErrorBoundary.jsx'
 import './index.css'
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-)
+// Verificar que el elemento root existe
+const rootElement = document.getElementById('root');
+if (!rootElement) {
+  console.error('❌ No se encontró el elemento #root en el HTML');
+  document.body.innerHTML = '<div style="padding: 20px; color: red;">Error: No se encontró el elemento #root. Verifica index.html</div>';
+} else {
+  console.log('✅ Aplicación iniciando...');
+  
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
+    </React.StrictMode>,
+  )
+}
 

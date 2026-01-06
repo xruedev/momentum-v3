@@ -12,9 +12,20 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
-const app = initializeApp(firebaseConfig);
+let app;
+let auth;
+let db;
+let firebaseError = null;
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+try {
+  app = initializeApp(firebaseConfig);
+  auth = getAuth(app);
+  db = getFirestore(app);
+} catch (error) {
+  console.error('Error al inicializar Firebase:', error);
+  firebaseError = error;
+}
+
+export { auth, db, firebaseError };
 export const appId = import.meta.env.VITE_APP_ID || 'habit-tracker-pro';
 

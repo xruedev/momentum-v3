@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { db, auth, appId } from './firebase';
+import { db, auth, appId, firebaseError } from './firebase';
 import { 
   CheckCircle2, Circle, Plus, Trash2, Calendar, Loader2, 
   Target, Check, X, BarChart3, ListTodo, TrendingUp, Award 
@@ -18,29 +18,120 @@ export default function App() {
   const [newHabit, setNewHabit] = useState({ name: '', type: 'boolean', goal: 1 });
   const today = new Date().toISOString().split('T')[0];
 
+  // Logging inicial para diagnóstico
   useEffect(() => {
-    // Autenticación simple para desarrollo local
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
-      if (!u) {
-        await signInAnonymously(auth);
-      } else {
-        setUser(u);
-      }
+    console.log('🚀 App component montado');
+    console.log('📊 Estado inicial:', {
+      firebaseError: firebaseError ? firebaseError.message : 'none',
+      auth: !!auth,
+      db: !!db,
+      loading,
+      user: !!user
     });
-    return () => unsubscribe();
   }, []);
 
   useEffect(() => {
-    if (!user) return;
-    const habitsRef = collection(db, 'habits');
-    const unsubscribe = onSnapshot(habitsRef, (snapshot) => {
-      const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setHabits(habitsList);
+    // Si Firebase no está inicializado, no intentar autenticación
+    if (!auth || firebaseError) {
+      setError("Firebase no está configurado correctamente. Verifica tu archivo .env");
       setLoading(false);
-    }, (err) => {
-      setError("Error al sincronizar datos.");
-      setLoading(false);
+      return;
+    }
+
+    let timeoutId;
+    let mounted = true;
+
+    // Timeout de seguridad: si después de 10 segundos no hay respuesta, mostrar error
+    timeoutId = setTimeout(() => {
+      if (mounted && loading && !user) {
+        setError("Tiempo de espera agotado. Verifica tu conexión y la configuración de Firebase.");
+        setLoading(false);
+      }
+    }, 10000);
+
+    // Autenticación simple para desarrollo local
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      if (!mounted) return;
+      
+      try {
+        if (!u) {
+          await signInAnonymously(auth);
+        } else {
+          setUser(u);
+          if (timeoutId) clearTimeout(timeoutId);
+        }
+      } catch (err) {
+        console.error('Error en autenticación:', err);
+        if (timeoutId) clearTimeout(timeoutId);
+        if (mounted) {
+          let errorMessage = `Error de autenticación: ${err.message}`;
+          
+          // Mensaje más específico para errores comunes
+          if (err.code === 'auth/configuration-not-found' || err.message.includes('configuration-not-found')) {
+            errorMessage = 'La autenticación anónima no está habilitada en Firebase. Ve a Firebase Console > Authentication > Sign-in method y habilita "Anonymous".';
+          } else if (err.code === 'auth/network-request-failed') {
+            errorMessage = 'Error de red. Verifica tu conexión a internet.';
+          }
+          
+          setError(errorMessage);
+          setLoading(false);
+        }
+      }
+    }, (error) => {
+      console.error('Error en onAuthStateChanged:', error);
+      if (timeoutId) clearTimeout(timeoutId);
+      if (mounted) {
+        let errorMessage = `Error de autenticación: ${error.message}`;
+        
+        if (error.code === 'auth/configuration-not-found' || error.message.includes('configuration-not-found')) {
+          errorMessage = 'La autenticación anónima no está habilitada en Firebase. Ve a Firebase Console > Authentication > Sign-in method y habilita "Anonymous".';
+        }
+        
+        setError(errorMessage);
+        setLoading(false);
+      }
     });
+    
+    return () => {
+      mounted = false;
+      unsubscribe();
+      if (timeoutId) clearTimeout(timeoutId);
+    };
+  }, []); // Solo ejecutar una vez al montar
+
+  useEffect(() => {
+    // Si Firebase no está inicializado o no hay usuario, no intentar cargar datos
+    if (!db || !user || firebaseError) {
+      if (firebaseError) {
+        setLoading(false);
+      }
+      return;
+    }
+    
+    setLoading(true);
+    const habitsRef = collection(db, 'habits');
+    
+    const unsubscribe = onSnapshot(
+      habitsRef, 
+      (snapshot) => {
+        try {
+          const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          setHabits(habitsList);
+          setLoading(false);
+          setError(null);
+        } catch (err) {
+          console.error('Error al procesar datos:', err);
+          setError("Error al procesar los datos.");
+          setLoading(false);
+        }
+      }, 
+      (err) => {
+        console.error('Error en onSnapshot:', err);
+        setError(`Error al sincronizar datos: ${err.message}`);
+        setLoading(false);
+      }
+    );
+    
     return () => unsubscribe();
   }, [user]);
 
@@ -107,12 +198,92 @@ export default function App() {
     updateProgress(habit, Math.max(0, currentValue - 1));
   };
 
-  if (loading) {
+  if (loading && !error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
           <p className="text-indigo-600 font-medium">Cargando hábitos...</p>
+          <p className="text-gray-500 text-sm mt-2">Conectando con Firebase...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Si hay un error de Firebase al inicializar, mostrarlo inmediatamente
+  if (firebaseError) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl w-full">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <X className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Error de Configuración de Firebase</h2>
+            <p className="text-gray-600 mb-4">{firebaseError.message}</p>
+
+            <div className="bg-gray-50 rounded-lg p-4 text-left text-sm text-gray-700">
+              <p className="font-semibold mb-2">Pasos para solucionar:</p>
+              <ol className="list-decimal list-inside space-y-1">
+                <li>Verifica que el archivo .env existe en la raíz del proyecto</li>
+                <li>Abre la consola del navegador (F12) y revisa los errores</li>
+                <li>Asegúrate de que todas las variables tienen valores (no vacíos)</li>
+                <li>Reinicia el servidor de desarrollo después de crear/modificar .env</li>
+                <li>Verifica que no hay espacios extra alrededor del signo =</li>
+                {error && error.includes('autenticación anónima') && (
+                  <li className="text-yellow-700 font-semibold mt-2">
+                    ⚠️ IMPORTANTE: Ve a Firebase Console → Authentication → Sign-in method → 
+                    Habilita "Anonymous" y guarda los cambios
+                  </li>
+                )}
+              </ol>
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Recargar página
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error && loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
+        <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl w-full">
+          <div className="text-center">
+            <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <X className="w-8 h-8 text-red-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-800 mb-2">Error de Conexión</h2>
+            <p className="text-gray-600 mb-4">{error}</p>
+
+            <div className="bg-gray-50 rounded-lg p-4 text-left text-sm text-gray-700">
+              <p className="font-semibold mb-2">Posibles soluciones:</p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Verifica que el archivo .env existe en la raíz del proyecto</li>
+                <li>Revisa la consola del navegador (F12) para más detalles</li>
+                <li>Asegúrate de que todas las variables tienen valores (no vacíos)</li>
+                <li>Reinicia el servidor de desarrollo después de crear/modificar .env</li>
+                <li>Verifica tu conexión a internet</li>
+                {error && error.includes('autenticación anónima') && (
+                  <li className="text-yellow-700 font-semibold mt-2">
+                    ⚠️ IMPORTANTE: Ve a Firebase Console → Authentication → Sign-in method → 
+                    Habilita "Anonymous" y guarda los cambios
+                  </li>
+                )}
+              </ul>
+            </div>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors"
+            >
+              Recargar página
+            </button>
+          </div>
         </div>
       </div>
     );
