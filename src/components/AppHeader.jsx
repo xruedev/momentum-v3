@@ -1,0 +1,53 @@
+import { Target, ChevronLeft, ChevronRight } from 'lucide-react';
+
+export default function AppHeader({ selectedDate, today, onDateChange, onPreviousDay, onNextDay, onTodayClick, formatDate }) {
+  return (
+    <header className="mb-8">
+      <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center gap-2">
+        <Target className="w-10 h-10 text-indigo-600" />
+        FocusMind
+      </h1>
+      <p className="text-gray-600 mb-4">Rastreador de Hábitos</p>
+      
+      {/* Selector de Fecha */}
+      <div className="flex items-center gap-4 bg-white rounded-lg p-3 shadow-md">
+        <button
+          onClick={onPreviousDay}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          title="Día anterior"
+          aria-label="Día anterior"
+        >
+          <ChevronLeft className="w-5 h-5 text-gray-600" />
+        </button>
+        <div className="flex-1 text-center">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => onDateChange(e.target.value)}
+            max={today}
+            className="text-lg font-semibold text-gray-800 bg-transparent border-none focus:outline-none cursor-pointer"
+          />
+          <p className="text-sm text-gray-500 mt-1">{formatDate(selectedDate)}</p>
+        </div>
+        <button
+          onClick={onNextDay}
+          disabled={selectedDate >= today}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Día siguiente"
+          aria-label="Día siguiente"
+        >
+          <ChevronRight className="w-5 h-5 text-gray-600" />
+        </button>
+        {selectedDate !== today && (
+          <button
+            onClick={onTodayClick}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
+          >
+            Hoy
+          </button>
+        )}
+      </div>
+    </header>
+  );
+}
+

@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { db, auth, appId, firebaseError } from './firebase';
-import { 
-  CheckCircle2, Circle, Plus, Trash2, Calendar, Loader2, 
-  Target, Check, X, BarChart3, ListTodo, TrendingUp, Award 
-} from 'lucide-react';
+import { db, auth, firebaseError } from './firebase';
+import { Loader2, X, BarChart3, ListTodo, Calendar } from 'lucide-react';
+import AppHeader from './components/AppHeader';
+import StatsCard from './components/StatsCard';
+import HabitsList from './components/HabitsList';
+import HabitsCalendar from './components/HabitsCalendar';
+import HabitsStats from './components/HabitsStats';
+import AddHabitModal from './components/AddHabitModal';
 
 export default function App() {
   const [user, setUser] = useState(null);
@@ -14,6 +17,7 @@ export default function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [newHabit, setNewHabit] = useState({ name: '', type: 'boolean', goal: 1 });
   const today = new Date().toISOString().split('T')[0];
@@ -137,17 +141,17 @@ export default function App() {
 
   const stats = useMemo(() => {
     if (habits.length === 0) return null;
-    const completedToday = habits.filter(h => {
-      const val = h.history?.[today];
+    const completedForDate = habits.filter(h => {
+      const val = h.history?.[selectedDate];
       return h.type === 'boolean' ? val === true : (Number(val) >= h.goal);
     }).length;
     return {
       total: habits.length,
-      completedToday,
-      percentToday: Math.round((completedToday / habits.length) * 100),
+      completedForDate,
+      percentForDate: Math.round((completedForDate / habits.length) * 100),
       totalActions: habits.reduce((acc, h) => acc + Object.keys(h.history || {}).length, 0)
     };
-  }, [habits, today]);
+  }, [habits, selectedDate]);
 
   const addHabit = async (e) => {
     e.preventDefault();
@@ -167,11 +171,11 @@ export default function App() {
     }
   };
 
-  const updateProgress = async (habit, newValue) => {
+  const updateProgress = async (habit, newValue, date = selectedDate) => {
     if (!user) return;
     const cleanValue = habit.type === 'boolean' ? newValue : Math.max(0, Number(newValue));
     try {
-      await updateDoc(doc(db, 'habits', habit.id), { [`history.${today}`]: cleanValue });
+      await updateDoc(doc(db, 'habits', habit.id), { [`history.${date}`]: cleanValue });
     } catch (err) { 
       setError("Error al actualizar."); 
     }
@@ -185,18 +189,40 @@ export default function App() {
     }
   };
 
-  const toggleHabit = (habit) => {
-    const currentValue = habit.history?.[today];
+  const toggleHabit = (habit, date = selectedDate) => {
+    const currentValue = habit.history?.[date];
     const newValue = habit.type === 'boolean' 
       ? !currentValue 
       : (Number(currentValue) || 0) + 1;
-    updateProgress(habit, newValue);
+    updateProgress(habit, newValue, date);
   };
 
-  const decrementHabit = (habit) => {
-    const currentValue = Number(habit.history?.[today] || 0);
-    updateProgress(habit, Math.max(0, currentValue - 1));
+  const decrementHabit = (habit, date = selectedDate) => {
+    const currentValue = Number(habit.history?.[date] || 0);
+    updateProgress(habit, Math.max(0, currentValue - 1), date);
   };
+
+  const changeDate = (days) => {
+    const currentDate = new Date(selectedDate);
+    currentDate.setDate(currentDate.getDate() + days);
+    setSelectedDate(currentDate.toISOString().split('T')[0]);
+  };
+
+  const formatDate = (dateString) => {
+    const date = new Date(dateString);
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    if (dateString === today.toISOString().split('T')[0]) {
+      return 'Hoy';
+    } else if (dateString === yesterday.toISOString().split('T')[0]) {
+      return 'Ayer';
+    } else {
+      return date.toLocaleDateString('es-ES', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+    }
+  };
+
 
   if (loading && !error) {
     return (
@@ -292,34 +318,21 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        {/* Header */}
-        <header className="mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2 flex items-center gap-2">
-            <Target className="w-10 h-10 text-indigo-600" />
-            FocusMind
-          </h1>
-          <p className="text-gray-600">Rastreador de Hábitos</p>
-        </header>
+        <AppHeader
+          selectedDate={selectedDate}
+          today={today}
+          onDateChange={setSelectedDate}
+          onPreviousDay={() => changeDate(-1)}
+          onNextDay={() => changeDate(1)}
+          onTodayClick={() => setSelectedDate(today)}
+          formatDate={formatDate}
+        />
 
-        {/* Stats Card */}
-        {stats && (
-          <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-indigo-600">{stats.completedToday}/{stats.total}</div>
-                <div className="text-sm text-gray-600 mt-1">Completados hoy</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">{stats.percentToday}%</div>
-                <div className="text-sm text-gray-600 mt-1">Progreso diario</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600">{stats.totalActions}</div>
-                <div className="text-sm text-gray-600 mt-1">Total acciones</div>
-              </div>
-            </div>
-          </div>
-        )}
+        <StatsCard
+          stats={stats}
+          selectedDate={selectedDate}
+          today={today}
+        />
 
         {/* Tabs */}
         <div className="bg-white rounded-xl shadow-lg mb-6">
@@ -334,6 +347,17 @@ export default function App() {
             >
               <ListTodo className="w-5 h-5 inline mr-2" />
               Lista
+            </button>
+            <button
+              onClick={() => setActiveTab('calendar')}
+              className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                activeTab === 'calendar'
+                  ? 'text-indigo-600 border-b-2 border-indigo-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Calendar className="w-5 h-5 inline mr-2" />
+              Calendario
             </button>
             <button
               onClick={() => setActiveTab('stats')}
@@ -364,211 +388,42 @@ export default function App() {
           {/* Tab Content */}
           <div className="p-6">
             {activeTab === 'list' && (
-              <div>
-                {habits.length === 0 ? (
-                  <div className="text-center py-12">
-                    <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500 mb-4">No tienes hábitos aún</p>
-                    <button
-                      onClick={() => setIsModalOpen(true)}
-                      className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
-                    >
-                      <Plus className="w-5 h-5" />
-                      Crear tu primer hábito
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {habits.map((habit) => {
-                      const todayValue = habit.history?.[today];
-                      const isCompleted = habit.type === 'boolean' 
-                        ? todayValue === true 
-                        : Number(todayValue) >= habit.goal;
+              <HabitsList
+                habits={habits}
+                selectedDate={selectedDate}
+                onToggleHabit={toggleHabit}
+                onDecrementHabit={decrementHabit}
+                onRemoveHabit={removeHabit}
+                onAddHabit={() => setIsModalOpen(true)}
+              />
+            )}
 
-                      return (
-                        <div
-                          key={habit.id}
-                          className={`border rounded-lg p-4 transition-all ${
-                            isCompleted
-                              ? 'bg-green-50 border-green-200'
-                              : 'bg-white border-gray-200 hover:border-indigo-300'
-                          }`}
-                        >
-                          <div className="flex items-center justify-between">
-                            <div className="flex-1">
-                              <div className="flex items-center gap-3">
-                                <button
-                                  onClick={() => toggleHabit(habit)}
-                                  className="flex-shrink-0"
-                                >
-                                  {isCompleted ? (
-                                    <CheckCircle2 className="w-6 h-6 text-green-600" />
-                                  ) : (
-                                    <Circle className="w-6 h-6 text-gray-400 hover:text-indigo-600" />
-                                  )}
-                                </button>
-                                <div className="flex-1">
-                                  <h3 className={`font-medium ${isCompleted ? 'text-green-800 line-through' : 'text-gray-800'}`}>
-                                    {habit.name}
-                                  </h3>
-                                  {habit.type === 'numeric' && (
-                                    <div className="flex items-center gap-2 mt-1">
-                                      <span className="text-sm text-gray-600">
-                                        {Number(todayValue) || 0} / {habit.goal}
-                                      </span>
-                                      <div className="flex gap-1">
-                                        <button
-                                          onClick={() => decrementHabit(habit)}
-                                          className="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center text-sm"
-                                        >
-                                          -
-                                        </button>
-                                        <button
-                                          onClick={() => toggleHabit(habit)}
-                                          className="w-6 h-6 rounded bg-indigo-100 hover:bg-indigo-200 flex items-center justify-center text-sm text-indigo-700"
-                                        >
-                                          +
-                                        </button>
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                            <button
-                              onClick={() => removeHabit(habit.id)}
-                              className="ml-4 p-2 text-gray-400 hover:text-red-600 transition-colors"
-                            >
-                              <Trash2 className="w-5 h-5" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {habits.length > 0 && (
-                  <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="mt-6 w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-                  >
-                    <Plus className="w-5 h-5" />
-                    Agregar nuevo hábito
-                  </button>
-                )}
-              </div>
+            {activeTab === 'calendar' && (
+              <HabitsCalendar
+                habits={habits}
+                selectedDate={selectedDate}
+                today={today}
+                onDateSelect={setSelectedDate}
+              />
             )}
 
             {activeTab === 'stats' && (
-              <div>
-                {habits.length === 0 ? (
-                  <div className="text-center py-12">
-                    <TrendingUp className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-                    <p className="text-gray-500">No hay estadísticas disponibles aún</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {habits.map((habit) => {
-                      const historyDays = Object.keys(habit.history || {}).length;
-                      const completedDays = Object.values(habit.history || {}).filter(val => 
-                        habit.type === 'boolean' ? val === true : Number(val) >= habit.goal
-                      ).length;
-                      const streak = 0; // Calcular racha si es necesario
-
-                      return (
-                        <div key={habit.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-                          <h3 className="font-medium text-gray-800 mb-3">{habit.name}</h3>
-                          <div className="grid grid-cols-2 gap-4">
-                            <div>
-                              <div className="text-2xl font-bold text-indigo-600">{completedDays}</div>
-                              <div className="text-sm text-gray-600">Días completados</div>
-                            </div>
-                            <div>
-                              <div className="text-2xl font-bold text-purple-600">{historyDays}</div>
-                              <div className="text-sm text-gray-600">Días registrados</div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+              <HabitsStats habits={habits} />
             )}
           </div>
         </div>
       </div>
 
-      {/* Modal para agregar hábito */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-md w-full p-6">
-            <h2 className="text-2xl font-bold text-gray-800 mb-4">Nuevo Hábito</h2>
-            <form onSubmit={addHabit}>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Nombre del hábito
-                </label>
-                <input
-                  type="text"
-                  value={newHabit.name}
-                  onChange={(e) => setNewHabit({ ...newHabit, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                  placeholder="Ej: Hacer ejercicio"
-                  required
-                />
-              </div>
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Tipo
-                </label>
-                <select
-                  value={newHabit.type}
-                  onChange={(e) => setNewHabit({ ...newHabit, type: e.target.value, goal: e.target.value === 'boolean' ? 1 : newHabit.goal })}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                >
-                  <option value="boolean">Sí/No</option>
-                  <option value="numeric">Numérico</option>
-                </select>
-              </div>
-              {newHabit.type === 'numeric' && (
-                <div className="mb-4">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Meta diaria
-                  </label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={newHabit.goal}
-                    onChange={(e) => setNewHabit({ ...newHabit, goal: Number(e.target.value) })}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                    required
-                  />
-                </div>
-              )}
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setNewHabit({ name: '', type: 'boolean', goal: 1 });
-                  }}
-                  className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
-                >
-                  Crear
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AddHabitModal
+        isOpen={isModalOpen}
+        onClose={() => {
+          setIsModalOpen(false);
+          setNewHabit({ name: '', type: 'boolean', goal: 1 });
+        }}
+        newHabit={newHabit}
+        onHabitChange={setNewHabit}
+        onSubmit={addHabit}
+      />
     </div>
   );
 }
