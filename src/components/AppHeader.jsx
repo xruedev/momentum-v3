@@ -28,6 +28,13 @@ export default function AppHeader({ selectedDate, today, onDateChange, onPreviou
             className="text-lg font-semibold text-gray-800 bg-transparent border-none focus:outline-none cursor-pointer"
           />
           <p className="text-sm text-gray-500 mt-1">{formatDate(selectedDate)}</p>
+          <p className="text-xs font-medium text-indigo-600 mt-0.5">
+            {(() => {
+              const date = new Date(selectedDate);
+              const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+              return dayNames[date.getDay()];
+            })()}
+          </p>
         </div>
         <button
           onClick={onNextDay}

@@ -1,6 +1,21 @@
 import { CheckCircle2, Circle, Plus, Trash2 } from 'lucide-react';
 
 export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onRemoveHabit, onAddHabit }) {
+  // Filtrar hábitos según el día de la semana seleccionado
+  const getDayOfWeek = (dateString) => {
+    const date = new Date(dateString);
+    return date.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
+  };
+
+  const selectedDayOfWeek = getDayOfWeek(selectedDate);
+  const filteredHabits = habits.filter(habit => {
+    // Si el hábito no tiene daysOfWeek definido, mostrarlo siempre (compatibilidad con hábitos antiguos)
+    if (!habit.daysOfWeek || habit.daysOfWeek.length === 0) {
+      return true;
+    }
+    return habit.daysOfWeek.includes(selectedDayOfWeek);
+  });
+
   if (habits.length === 0) {
     return (
       <div className="text-center py-12">
@@ -17,10 +32,26 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     );
   }
 
+  if (filteredHabits.length === 0) {
+    return (
+      <div className="text-center py-12">
+        <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+        <p className="text-gray-500 mb-4">No hay hábitos programados para este día</p>
+        <button
+          onClick={onAddHabit}
+          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
+        >
+          <Plus className="w-5 h-5" />
+          Agregar nuevo hábito
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div className="space-y-3">
-        {habits.map((habit) => {
+        {filteredHabits.map((habit) => {
           const dateValue = habit.history?.[selectedDate];
           const isCompleted = habit.type === 'boolean' 
             ? dateValue === true 

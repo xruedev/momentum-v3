@@ -47,6 +47,50 @@ export default function AddHabitModal({ isOpen, onClose, newHabit, onHabitChange
               />
             </div>
           )}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Días de la semana
+            </label>
+            <div className="grid grid-cols-7 gap-2">
+              {[
+                { value: 0, label: 'D' },
+                { value: 1, label: 'L' },
+                { value: 2, label: 'M' },
+                { value: 3, label: 'X' },
+                { value: 4, label: 'J' },
+                { value: 5, label: 'V' },
+                { value: 6, label: 'S' }
+              ].map((day) => (
+                <label
+                  key={day.value}
+                  className={`
+                    flex flex-col items-center justify-center p-2 rounded-lg border-2 cursor-pointer transition-all
+                    ${newHabit.daysOfWeek?.includes(day.value)
+                      ? 'bg-indigo-100 border-indigo-500 text-indigo-700'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:border-indigo-300'
+                    }
+                  `}
+                >
+                  <input
+                    type="checkbox"
+                    checked={newHabit.daysOfWeek?.includes(day.value) || false}
+                    onChange={(e) => {
+                      const currentDays = newHabit.daysOfWeek || [];
+                      const newDays = e.target.checked
+                        ? [...currentDays, day.value]
+                        : currentDays.filter(d => d !== day.value);
+                      onHabitChange({ ...newHabit, daysOfWeek: newDays });
+                    }}
+                    className="sr-only"
+                  />
+                  <span className="text-xs font-semibold">{day.label}</span>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-2">
+              Selecciona los días en los que quieres realizar este hábito
+            </p>
+          </div>
           <div className="flex gap-3">
             <button
               type="button"

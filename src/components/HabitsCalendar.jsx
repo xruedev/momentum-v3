@@ -26,15 +26,26 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
     const isToday = dateString === today;
     const isFuture = dateString > today;
     
+    // Obtener el día de la semana
+    const dayOfWeek = currentDate.getDay();
+    
+    // Filtrar hábitos que aplican a este día de la semana
+    const habitsForDay = habits.filter(habit => {
+      if (!habit.daysOfWeek || habit.daysOfWeek.length === 0) {
+        return true; // Compatibilidad con hábitos antiguos
+      }
+      return habit.daysOfWeek.includes(dayOfWeek);
+    });
+    
     // Contar hábitos completados para este día
-    const completedCount = habits.filter(habit => {
+    const completedCount = habitsForDay.filter(habit => {
       const val = habit.history?.[dateString];
       return habit.type === 'boolean' 
         ? val === true 
         : Number(val) >= habit.goal;
     }).length;
     
-    const totalHabits = habits.length;
+    const totalHabits = habitsForDay.length;
     const completionRate = totalHabits > 0 ? completedCount / totalHabits : 0;
     
     days.push(

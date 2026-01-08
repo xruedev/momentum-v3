@@ -19,7 +19,12 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
-  const [newHabit, setNewHabit] = useState({ name: '', type: 'boolean', goal: 1 });
+  const [newHabit, setNewHabit] = useState({ 
+    name: '', 
+    type: 'boolean', 
+    goal: 1, 
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6] // Por defecto todos los días
+  });
   const today = new Date().toISOString().split('T')[0];
 
   // Logging inicial para diagnóstico
@@ -141,14 +146,34 @@ export default function App() {
 
   const stats = useMemo(() => {
     if (habits.length === 0) return null;
-    const completedForDate = habits.filter(h => {
+    
+    // Obtener el día de la semana del selectedDate
+    const getDayOfWeek = (dateString) => {
+      const date = new Date(dateString);
+      return date.getDay();
+    };
+    
+    const selectedDayOfWeek = getDayOfWeek(selectedDate);
+    
+    // Filtrar hábitos que aplican al día seleccionado
+    const habitsForDate = habits.filter(habit => {
+      if (!habit.daysOfWeek || habit.daysOfWeek.length === 0) {
+        return true; // Compatibilidad con hábitos antiguos
+      }
+      return habit.daysOfWeek.includes(selectedDayOfWeek);
+    });
+    
+    if (habitsForDate.length === 0) return null;
+    
+    const completedForDate = habitsForDate.filter(h => {
       const val = h.history?.[selectedDate];
       return h.type === 'boolean' ? val === true : (Number(val) >= h.goal);
     }).length;
+    
     return {
-      total: habits.length,
+      total: habitsForDate.length,
       completedForDate,
-      percentForDate: Math.round((completedForDate / habits.length) * 100),
+      percentForDate: Math.round((completedForDate / habitsForDate.length) * 100),
       totalActions: habits.reduce((acc, h) => acc + Object.keys(h.history || {}).length, 0)
     };
   }, [habits, selectedDate]);
@@ -156,15 +181,20 @@ export default function App() {
   const addHabit = async (e) => {
     e.preventDefault();
     if (!newHabit.name.trim() || !user) return;
+    if (!newHabit.daysOfWeek || newHabit.daysOfWeek.length === 0) {
+      setError("Debes seleccionar al menos un día de la semana.");
+      return;
+    }
     try {
       const habitId = crypto.randomUUID();
       await setDoc(doc(db, 'habits', habitId), {
         ...newHabit,
         goal: Number(newHabit.goal),
+        daysOfWeek: newHabit.daysOfWeek || [0, 1, 2, 3, 4, 5, 6],
         createdAt: new Date().toISOString(),
         history: {}
       });
-      setNewHabit({ name: '', type: 'boolean', goal: 1 });
+      setNewHabit({ name: '', type: 'boolean', goal: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
       setIsModalOpen(false);
     } catch (err) { 
       setError("Error al guardar."); 
@@ -418,7 +448,7 @@ export default function App() {
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
-          setNewHabit({ name: '', type: 'boolean', goal: 1 });
+          setNewHabit({ name: '', type: 'boolean', goal: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
         }}
         newHabit={newHabit}
         onHabitChange={setNewHabit}
