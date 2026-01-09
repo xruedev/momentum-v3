@@ -1,6 +1,6 @@
-import { CheckCircle2, Circle, Plus, Trash2 } from 'lucide-react';
+import { CheckCircle2, Circle } from 'lucide-react';
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onRemoveHabit, onAddHabit }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit }) {
   // Filtrar hábitos según el día de la semana seleccionado
   const getDayOfWeek = (dateString) => {
     const date = new Date(dateString);
@@ -21,13 +21,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
       <div className="text-center py-12">
         <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
         <p className="text-gray-500 mb-4">No tienes hábitos aún</p>
-        <button
-          onClick={onAddHabit}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Crear tu primer hábito
-        </button>
+        <p className="text-sm text-gray-400">Ve a la pestaña &quot;Hábitos&quot; para crear tu primer hábito</p>
       </div>
     );
   }
@@ -37,13 +31,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
       <div className="text-center py-12">
         <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
         <p className="text-gray-500 mb-4">No hay hábitos programados para este día</p>
-        <button
-          onClick={onAddHabit}
-          className="bg-indigo-600 text-white px-6 py-2 rounded-lg hover:bg-indigo-700 transition-colors inline-flex items-center gap-2"
-        >
-          <Plus className="w-5 h-5" />
-          Agregar nuevo hábito
-        </button>
+        <p className="text-sm text-gray-400">Ve a la pestaña &quot;Hábitos&quot; para agregar nuevos hábitos</p>
       </div>
     );
   }
@@ -107,25 +95,11 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     </div>
                   </div>
                 </div>
-                <button
-                  onClick={() => onRemoveHabit(habit.id)}
-                  className="ml-4 p-2 text-gray-400 hover:text-red-600 transition-colors"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
               </div>
             </div>
           );
         })}
       </div>
-
-      <button
-        onClick={onAddHabit}
-        className="mt-6 w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-      >
-        <Plus className="w-5 h-5" />
-        Agregar nuevo hábito
-      </button>
     </div>
   );
 }

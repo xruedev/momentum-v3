@@ -1,19 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
-import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc } from 'firebase/firestore';
-import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { collection, doc, setDoc, onSnapshot, updateDoc, deleteDoc, query, where } from 'firebase/firestore';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth, firebaseError } from './firebase';
-import { Loader2, X, BarChart3, ListTodo, Calendar } from 'lucide-react';
+import { Loader2, X, BarChart3, ListTodo, Calendar, Target } from 'lucide-react';
 import AppHeader from './components/AppHeader';
 import StatsCard from './components/StatsCard';
 import HabitsList from './components/HabitsList';
+import HabitsOverview from './components/HabitsOverview';
 import HabitsCalendar from './components/HabitsCalendar';
 import HabitsStats from './components/HabitsStats';
 import AddHabitModal from './components/AddHabitModal';
+import Login from './components/Login';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [habits, setHabits] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -34,77 +36,40 @@ export default function App() {
       firebaseError: firebaseError ? firebaseError.message : 'none',
       auth: !!auth,
       db: !!db,
-      loading,
+      authLoading,
       user: !!user
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     // Si Firebase no está inicializado, no intentar autenticación
     if (!auth || firebaseError) {
       setError("Firebase no está configurado correctamente. Verifica tu archivo .env");
-      setLoading(false);
+      setAuthLoading(false);
       return;
     }
 
-    let timeoutId;
     let mounted = true;
 
-    // Timeout de seguridad: si después de 10 segundos no hay respuesta, mostrar error
-    timeoutId = setTimeout(() => {
-      if (mounted && loading && !user) {
-        setError("Tiempo de espera agotado. Verifica tu conexión y la configuración de Firebase.");
-        setLoading(false);
-      }
-    }, 10000);
-
-    // Autenticación simple para desarrollo local
-    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+    // Observar cambios en el estado de autenticación
+    const unsubscribe = onAuthStateChanged(auth, (u) => {
       if (!mounted) return;
       
-      try {
-        if (!u) {
-          await signInAnonymously(auth);
-        } else {
-          setUser(u);
-          if (timeoutId) clearTimeout(timeoutId);
-        }
-      } catch (err) {
-        console.error('Error en autenticación:', err);
-        if (timeoutId) clearTimeout(timeoutId);
-        if (mounted) {
-          let errorMessage = `Error de autenticación: ${err.message}`;
-          
-          // Mensaje más específico para errores comunes
-          if (err.code === 'auth/configuration-not-found' || err.message.includes('configuration-not-found')) {
-            errorMessage = 'La autenticación anónima no está habilitada en Firebase. Ve a Firebase Console > Authentication > Sign-in method y habilita "Anonymous".';
-          } else if (err.code === 'auth/network-request-failed') {
-            errorMessage = 'Error de red. Verifica tu conexión a internet.';
-          }
-          
-          setError(errorMessage);
-          setLoading(false);
-        }
-      }
+      setUser(u);
+      setAuthLoading(false);
+      setError(null);
     }, (error) => {
       console.error('Error en onAuthStateChanged:', error);
-      if (timeoutId) clearTimeout(timeoutId);
       if (mounted) {
-        let errorMessage = `Error de autenticación: ${error.message}`;
-        
-        if (error.code === 'auth/configuration-not-found' || error.message.includes('configuration-not-found')) {
-          errorMessage = 'La autenticación anónima no está habilitada en Firebase. Ve a Firebase Console > Authentication > Sign-in method y habilita "Anonymous".';
-        }
-        
-        setError(errorMessage);
-        setLoading(false);
+        setError(`Error de autenticación: ${error.message}`);
+        setAuthLoading(false);
       }
     });
     
     return () => {
       mounted = false;
       unsubscribe();
-      if (timeoutId) clearTimeout(timeoutId);
     };
   }, []); // Solo ejecutar una vez al montar
 
@@ -112,32 +77,32 @@ export default function App() {
     // Si Firebase no está inicializado o no hay usuario, no intentar cargar datos
     if (!db || !user || firebaseError) {
       if (firebaseError) {
-        setLoading(false);
+        setAuthLoading(false);
       }
       return;
     }
     
-    setLoading(true);
+    // No bloquear la UI mientras se cargan los hábitos
+    // Simplemente mostrar la UI con array vacío y cargar en segundo plano
     const habitsRef = collection(db, 'habits');
+    // Filtrar hábitos por userId del usuario autenticado
+    const habitsQuery = query(habitsRef, where('userId', '==', user.uid));
     
     const unsubscribe = onSnapshot(
-      habitsRef, 
+      habitsQuery, 
       (snapshot) => {
         try {
           const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           setHabits(habitsList);
-          setLoading(false);
           setError(null);
         } catch (err) {
           console.error('Error al procesar datos:', err);
           setError("Error al procesar los datos.");
-          setLoading(false);
         }
       }, 
       (err) => {
         console.error('Error en onSnapshot:', err);
         setError(`Error al sincronizar datos: ${err.message}`);
-        setLoading(false);
       }
     );
     
@@ -189,6 +154,7 @@ export default function App() {
       const habitId = crypto.randomUUID();
       await setDoc(doc(db, 'habits', habitId), {
         ...newHabit,
+        userId: user.uid, // Agregar userId al hábito
         goal: Number(newHabit.goal),
         daysOfWeek: newHabit.daysOfWeek || [0, 1, 2, 3, 4, 5, 6],
         createdAt: new Date().toISOString(),
@@ -253,14 +219,31 @@ export default function App() {
     }
   };
 
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setUser(null);
+      setHabits([]);
+    } catch (err) {
+      console.error('Error al cerrar sesión:', err);
+      setError('Error al cerrar sesión');
+    }
+  };
 
-  if (loading && !error) {
+
+  // Mostrar Login si no hay usuario y no está cargando autenticación
+  if (!user && !authLoading && !firebaseError) {
+    return <Login onLoginSuccess={(user) => setUser(user)} />;
+  }
+
+  // Mostrar loader solo durante la autenticación inicial
+  if (authLoading && !error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center">
         <div className="text-center">
           <Loader2 className="w-12 h-12 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-indigo-600 font-medium">Cargando hábitos...</p>
-          <p className="text-gray-500 text-sm mt-2">Conectando con Firebase...</p>
+          <p className="text-indigo-600 font-medium">Conectando...</p>
+          <p className="text-gray-500 text-sm mt-2">Verificando autenticación...</p>
         </div>
       </div>
     );
@@ -289,7 +272,7 @@ export default function App() {
                 {error && error.includes('autenticación anónima') && (
                   <li className="text-yellow-700 font-semibold mt-2">
                     ⚠️ IMPORTANTE: Ve a Firebase Console → Authentication → Sign-in method → 
-                    Habilita "Anonymous" y guarda los cambios
+                    Habilita &quot;Anonymous&quot; y guarda los cambios
                   </li>
                 )}
               </ol>
@@ -306,7 +289,7 @@ export default function App() {
     );
   }
 
-  if (error && loading) {
+  if (error && authLoading) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
         <div className="bg-white rounded-xl shadow-lg p-6 max-w-2xl w-full">
@@ -328,7 +311,7 @@ export default function App() {
                 {error && error.includes('autenticación anónima') && (
                   <li className="text-yellow-700 font-semibold mt-2">
                     ⚠️ IMPORTANTE: Ve a Firebase Console → Authentication → Sign-in method → 
-                    Habilita "Anonymous" y guarda los cambios
+                    Habilita &quot;Anonymous&quot; y guarda los cambios
                   </li>
                 )}
               </ul>
@@ -356,6 +339,8 @@ export default function App() {
           onNextDay={() => changeDate(1)}
           onTodayClick={() => setSelectedDate(today)}
           formatDate={formatDate}
+          user={user}
+          onLogout={handleLogout}
         />
 
         <StatsCard
@@ -377,6 +362,17 @@ export default function App() {
             >
               <ListTodo className="w-5 h-5 inline mr-2" />
               Lista
+            </button>
+            <button
+              onClick={() => setActiveTab('habits')}
+              className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                activeTab === 'habits'
+                  ? 'text-indigo-600 border-b-2 border-indigo-600'
+                  : 'text-gray-600 hover:text-gray-800'
+              }`}
+            >
+              <Target className="w-5 h-5 inline mr-2" />
+              Hábitos
             </button>
             <button
               onClick={() => setActiveTab('calendar')}
@@ -423,8 +419,14 @@ export default function App() {
                 selectedDate={selectedDate}
                 onToggleHabit={toggleHabit}
                 onDecrementHabit={decrementHabit}
-                onRemoveHabit={removeHabit}
+              />
+            )}
+
+            {activeTab === 'habits' && (
+              <HabitsOverview
+                habits={habits}
                 onAddHabit={() => setIsModalOpen(true)}
+                onRemoveHabit={removeHabit}
               />
             )}
 
