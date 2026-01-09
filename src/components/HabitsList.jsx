@@ -1,5 +1,40 @@
 import { useState, useMemo } from 'react';
-import { CheckCircle2, Circle, XCircle, Calendar, List, Plus, Minus, Check, X } from 'lucide-react';
+import { CheckCircle2, Circle, Calendar, List, Plus, Check, X } from 'lucide-react';
+
+// Función para calcular el número de semana del año (ISO 8601)
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+// Función para calcular el total de semanas en un año
+function getTotalWeeksInYear(year) {
+  // Calcular la semana del 28 de diciembre, que siempre está en la última semana del año
+  const dec28 = new Date(Date.UTC(year, 11, 28));
+  const weekOfDec28 = getWeekNumber(dec28);
+  
+  // Si el 28 de diciembre está en la semana 1, significa que pertenece al año siguiente
+  // En ese caso, el año tiene 52 semanas. Si está en semana 52 o 53, ese es el total.
+  if (weekOfDec28 === 1) {
+    // Verificar si realmente es del año siguiente o si el año tiene 53 semanas
+    const dec31 = new Date(Date.UTC(year, 11, 31));
+    const weekOfDec31 = getWeekNumber(dec31);
+    return weekOfDec31 === 1 ? 52 : 53;
+  }
+  
+  return weekOfDec28;
+}
+
+// Función para formatear fecha en español
+function formatDateSpanish(dateString) {
+  const date = new Date(dateString);
+  const day = date.getDate();
+  const month = date.toLocaleDateString('es-ES', { month: 'long' }).toLowerCase();
+  return `${day} de ${month}`;
+}
 
 export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today, getGoalForDate }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
@@ -31,6 +66,24 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     }
     return week;
   }, [selectedDate]);
+
+  // Calcular información de la semana
+  const weekInfo = useMemo(() => {
+    if (weekDates.length === 0) return null;
+    const mondayDate = new Date(weekDates[0]);
+    const weekNumber = getWeekNumber(mondayDate);
+    const year = mondayDate.getFullYear();
+    
+    // Calcular total de semanas en el año usando función mejorada
+    const totalWeeks = getTotalWeeksInYear(year);
+    
+    return {
+      startDate: formatDateSpanish(weekDates[0]),
+      endDate: formatDateSpanish(weekDates[6]),
+      weekNumber,
+      totalWeeks
+    };
+  }, [weekDates]);
 
   const selectedDayOfWeek = getDayOfWeek(selectedDate);
   
@@ -256,7 +309,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     return (
       <td 
         key="aggregates"
-        className="p-3 text-center border-l-4 border-indigo-300 bg-indigo-50/30 font-medium min-w-[100px]"
+        className="p-3 text-center border-l-4 border-indigo-300 bg-indigo-50/30 font-medium min-w-[150px]"
       >
         {aggregates.type === 'todo' ? (
           <div className="flex items-center justify-center gap-1">
@@ -401,11 +454,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
             className={`mx-auto ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           >
             {isCompleted ? (
-              habitType === 'todont' ? (
-                <XCircle className="w-5 h-5 text-red-600" />
-              ) : (
-                <CheckCircle2 className="w-5 h-5 text-green-600" />
-              )
+              <CheckCircle2 className="w-5 h-5 text-green-600" />
             ) : (
               <Circle className={`w-5 h-5 ${isDisabled ? 'text-gray-300' : 'text-gray-400 hover:text-indigo-600'}`} />
             )}
@@ -494,7 +543,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
           </button>
         ))}
       </div>
-      
+
       {/* Contenido de hábitos */}
       {habits.length === 0 ? (
         <div className="text-center py-12">
@@ -521,9 +570,19 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
         /* Vista Semanal - Tabla */
         <div className="overflow-x-auto">
           <table className="w-full border-collapse bg-white rounded-lg shadow-sm">
-            <thead>
-              <tr className="bg-gray-50 border-b-2 border-gray-200">
-                <th className="p-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50 z-10 min-w-[200px]">
+            <thead className="border-t-2 border-x-2 border-gray-300">
+              {/* Fila con indicador de semana */}
+              {weekInfo && (
+                <tr className="bg-gray-50 border-b-2 border-gray-300">
+                  <th colSpan={9} className="p-3 text-center text-sm font-semibold text-gray-700">
+                    {weekInfo.startDate} - {weekInfo.endDate}
+                    <span className="mx-2 text-gray-400">•</span>
+                    Semana {weekInfo.weekNumber}/{weekInfo.totalWeeks}
+                  </th>
+                </tr>
+              )}
+              <tr className="bg-gray-50 border-b-2 border-gray-300">
+                <th className="p-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50 z-10 min-w-[200px] border-l-2 border-gray-300">
                   Hábito
                 </th>
                 {weekDates.map((date) => {
@@ -550,7 +609,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     </th>
                   );
                 })}
-                <th className="p-3 text-center text-sm font-semibold text-gray-700 border-l-4 border-indigo-300 bg-indigo-50/50 min-w-[100px]">
+                <th className="p-3 text-center text-sm font-semibold text-gray-700 border-l-4 border-indigo-300 bg-indigo-50/50 min-w-[150px] border-r-2 border-gray-300">
                   Totales
                 </th>
               </tr>
@@ -559,7 +618,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {/* Grupo: To Do */}
               {habitsByType.todo.length > 0 && (
                 <>
-                  <tr className="bg-green-50/30">
+                  <tr className="bg-green-50/30 border-t-2 border-gray-300">
                     <td colSpan={9} className="p-2 text-xs font-semibold text-green-700 uppercase">
                       To Do
                     </td>
@@ -582,7 +641,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {/* Grupo: To Don't */}
               {habitsByType.todont.length > 0 && (
                 <>
-                  <tr className="bg-red-50/30">
+                  <tr className={`bg-red-50/30 ${habitsByType.todo.length === 0 ? 'border-t-2 border-gray-300' : ''}`}>
                     <td colSpan={9} className="p-2 text-xs font-semibold text-red-700 uppercase">
                       To Don&apos;t
                     </td>
@@ -605,7 +664,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {/* Grupo: Horas */}
               {habitsByType.horas.length > 0 && (
                 <>
-                  <tr className="bg-blue-50/30">
+                  <tr className={`bg-blue-50/30 ${habitsByType.todo.length === 0 && habitsByType.todont.length === 0 ? 'border-t-2 border-gray-300' : ''}`}>
                     <td colSpan={9} className="p-2 text-xs font-semibold text-blue-700 uppercase">
                       Horas
                     </td>
@@ -695,7 +754,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               case 'todo':
                 return 'bg-green-50 border-green-300';
               case 'todont':
-                return 'bg-red-50 border-red-300';
+                return 'bg-green-50 border-red-300';
               case 'horas':
                 return 'bg-blue-50 border-blue-300';
               default:
@@ -725,7 +784,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               case 'todo':
                 return <CheckCircle2 className="w-6 h-6 text-green-600" />;
               case 'todont':
-                return <XCircle className="w-6 h-6 text-red-600" />;
+                return <CheckCircle2 className="w-6 h-6 text-green-600" />;
               case 'horas':
                 return <CheckCircle2 className="w-6 h-6 text-blue-600" />;
               default:

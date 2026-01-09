@@ -1,6 +1,6 @@
-import { Plus, Target, Hash, Trash2 } from 'lucide-react';
+import { Plus, Target, Hash, Trash2, Edit } from 'lucide-react';
 
-export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit }) {
+export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEditHabit }) {
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; // Mantener orden para compatibilidad con índices
 
   const formatDaysOfWeek = (daysOfWeek) => {
@@ -98,13 +98,22 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit }) {
                   </div>
                 </div>
               </div>
-              <button
-                onClick={() => onRemoveHabit(habit.id)}
-                className="ml-4 p-2 text-gray-400 hover:text-red-600 transition-colors"
-                title="Eliminar hábito"
-              >
-                <Trash2 className="w-5 h-5" />
-              </button>
+              <div className="ml-4 flex items-center gap-2">
+                <button
+                  onClick={() => onEditHabit(habit)}
+                  className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                  title="Editar hábito"
+                >
+                  <Edit className="w-5 h-5" />
+                </button>
+                <button
+                  onClick={() => onRemoveHabit(habit.id)}
+                  className="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                  title="Eliminar hábito"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
+              </div>
             </div>
           </div>
         ))}

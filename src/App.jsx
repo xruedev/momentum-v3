@@ -9,6 +9,7 @@ import HabitsOverview from './components/HabitsOverview';
 import HabitsCalendar from './components/HabitsCalendar';
 import HabitsStats from './components/HabitsStats';
 import AddHabitModal from './components/AddHabitModal';
+import EditHabitModal from './components/EditHabitModal';
 import Login from './components/Login';
 
 export default function App() {
@@ -18,6 +19,8 @@ export default function App() {
   const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('list');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editingHabit, setEditingHabit] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [newHabit, setNewHabit] = useState({ 
@@ -30,10 +33,31 @@ export default function App() {
   });
   const today = new Date().toISOString().split('T')[0];
 
+  // Función para limpiar duplicados en goalHistory
+  const cleanGoalHistory = (goalHistory) => {
+    if (!goalHistory || goalHistory.length === 0) return goalHistory;
+    
+    // Agrupar por fecha y mantener solo la última entrada de cada fecha
+    const historyByDate = {};
+    goalHistory.forEach((entry, index) => {
+      if (!entry.effectiveDate) return;
+      const date = entry.effectiveDate;
+      // Si ya existe una entrada para esta fecha, solo la reemplazamos si esta es más reciente (mayor índice)
+      if (!historyByDate[date] || index > historyByDate[date].index) {
+        historyByDate[date] = { entry, index };
+      }
+    });
+    
+    // Convertir de vuelta a array y ordenar por fecha
+    return Object.values(historyByDate)
+      .map(item => item.entry)
+      .sort((a, b) => new Date(a.effectiveDate) - new Date(b.effectiveDate));
+  };
+
   // Función helper para obtener la meta según el día de la semana
   const getGoalForDate = (habit, dateString) => {
     // Para hábitos tipo "todo" y "todont", usar goal normal
-    if (habit.type !== 'horas') return habit.goal;
+    if (habit.type !== 'horas' && habit.type !== 'numeric') return habit.goal;
     
     const date = new Date(dateString);
     const dayOfWeek = date.getDay(); // 0 = Domingo, 6 = Sábado
@@ -41,8 +65,44 @@ export default function App() {
     // Días laborables: Lunes (1) a Viernes (5)
     const isWorkday = dayOfWeek >= 1 && dayOfWeek <= 5;
     
-    // Retornar la meta correspondiente según el tipo de día
-    return isWorkday ? habit.goalWorkdays : habit.goalWeekends;
+    // Si no hay historial, usar metas actuales (compatibilidad con hábitos antiguos)
+    if (!habit.goalHistory || habit.goalHistory.length === 0) {
+      return isWorkday ? (habit.goalWorkdays ?? habit.goal ?? 0) : (habit.goalWeekends ?? habit.goal ?? 0);
+    }
+    
+    // Buscar la meta vigente para esta fecha
+    // Filtrar entradas donde effectiveDate <= dateString
+    const validEntries = habit.goalHistory.filter(entry => {
+      if (!entry.effectiveDate) return false;
+      return entry.effectiveDate <= dateString;
+    });
+    
+    // Si no hay entrada anterior, usar metas actuales
+    if (validEntries.length === 0) {
+      return isWorkday ? (habit.goalWorkdays ?? habit.goal ?? 0) : (habit.goalWeekends ?? habit.goal ?? 0);
+    }
+    
+    // Ordenar por fecha descendente, y si hay misma fecha, tomar la última en el array (más reciente)
+    // Primero ordenamos por fecha, luego por índice inverso para mantener el orden original
+    const sortedEntries = validEntries
+      .map((entry, index) => ({ entry, originalIndex: index }))
+      .sort((a, b) => {
+        const dateA = new Date(a.entry.effectiveDate);
+        const dateB = new Date(b.entry.effectiveDate);
+        // Si las fechas son iguales, tomar la que tiene mayor índice (más reciente en el array)
+        if (dateA.getTime() === dateB.getTime()) {
+          return b.originalIndex - a.originalIndex;
+        }
+        return dateB - dateA; // Orden descendente por fecha
+      });
+    
+    const effectiveGoal = sortedEntries[0]?.entry;
+    
+    if (!effectiveGoal) {
+      return isWorkday ? (habit.goalWorkdays ?? habit.goal ?? 0) : (habit.goalWeekends ?? habit.goal ?? 0);
+    }
+    
+    return isWorkday ? (effectiveGoal.goalWorkdays ?? 0) : (effectiveGoal.goalWeekends ?? 0);
   };
 
   // Logging inicial para diagnóstico
@@ -106,10 +166,26 @@ export default function App() {
     
     const unsubscribe = onSnapshot(
       habitsQuery, 
-      (snapshot) => {
+      async (snapshot) => {
         try {
           const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setHabits(habitsList);
+          
+          // Limpiar duplicados en goalHistory para cada hábito
+          const cleanedHabits = habitsList.map(habit => {
+            if (habit.goalHistory && habit.goalHistory.length > 0) {
+              const cleanedHistory = cleanGoalHistory(habit.goalHistory);
+              // Si se encontraron duplicados, guardar la versión limpia
+              if (cleanedHistory.length !== habit.goalHistory.length) {
+                // Guardar la versión limpia en Firebase (asíncrono, no bloquea la UI)
+                updateDoc(doc(db, 'habits', habit.id), { goalHistory: cleanedHistory })
+                  .catch(err => console.error('Error al limpiar historial:', err));
+                return { ...habit, goalHistory: cleanedHistory };
+              }
+            }
+            return habit;
+          });
+          
+          setHabits(cleanedHabits);
           setError(null);
         } catch (err) {
           console.error('Error al procesar datos:', err);
@@ -189,6 +265,12 @@ export default function App() {
       if (newHabit.type === 'horas') {
         habitData.goalWorkdays = Number(newHabit.goalWorkdays);
         habitData.goalWeekends = Number(newHabit.goalWeekends);
+        // Inicializar historial de metas con la fecha de creación
+        habitData.goalHistory = [{
+          effectiveDate: today,
+          goalWorkdays: Number(newHabit.goalWorkdays),
+          goalWeekends: Number(newHabit.goalWeekends)
+        }];
       } else {
         // Para otros tipos, guardar goal normal
         habitData.goal = Number(newHabit.goal);
@@ -226,6 +308,84 @@ export default function App() {
     } catch (err) { 
       setError("Error al eliminar."); 
     }
+  };
+
+  const updateHabit = async (habitId, updates) => {
+    if (!user) return;
+    
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    try {
+      const updateData = { name: updates.name };
+      
+      // Si es hábito de horas y cambian las metas
+      const currentGoalWorkdays = Number(habit.goalWorkdays ?? habit.goal ?? 0);
+      const currentGoalWeekends = Number(habit.goalWeekends ?? habit.goal ?? 0);
+      
+      if ((habit.type === 'horas' || habit.type === 'numeric') && 
+          (Number(updates.goalWorkdays) !== currentGoalWorkdays || 
+           Number(updates.goalWeekends) !== currentGoalWeekends)) {
+        
+        let goalHistory = habit.goalHistory || [];
+        
+        // Si no hay historial, inicializar con las metas actuales desde la fecha de creación
+        // o desde una fecha muy antigua para preservar todo el historial
+        if (goalHistory.length === 0) {
+          const initialDate = habit.createdAt 
+            ? new Date(habit.createdAt).toISOString().split('T')[0]
+            : '2000-01-01'; // Fecha muy antigua para hábitos sin createdAt
+          
+          goalHistory.push({
+            effectiveDate: initialDate,
+            goalWorkdays: habit.goalWorkdays || habit.goal || 0,
+            goalWeekends: habit.goalWeekends || habit.goal || 0
+          });
+        }
+        
+        // Eliminar todas las entradas existentes para hoy (para evitar duplicados)
+        goalHistory = goalHistory.filter(entry => entry.effectiveDate !== today);
+        
+        // Añadir nueva entrada con las nuevas metas desde hoy
+        const newEntry = {
+          effectiveDate: today,
+          goalWorkdays: Number(updates.goalWorkdays),
+          goalWeekends: Number(updates.goalWeekends)
+        };
+        
+        goalHistory.push(newEntry);
+        
+        updateData.goalHistory = goalHistory;
+        updateData.goalWorkdays = Number(updates.goalWorkdays);
+        updateData.goalWeekends = Number(updates.goalWeekends);
+      }
+      
+      await updateDoc(doc(db, 'habits', habitId), updateData);
+      setIsEditModalOpen(false);
+      setEditingHabit(null);
+    } catch (err) {
+      setError("Error al actualizar.");
+    }
+  };
+
+  const handleEditHabit = (habit) => {
+    // Asegurar que los valores de metas estén correctamente inicializados
+    const habitForEdit = { ...habit };
+    
+    // Para hábitos de horas antiguos que pueden tener solo 'goal'
+    if ((habit.type === 'horas' || habit.type === 'numeric') && !habit.goalWorkdays) {
+      habitForEdit.goalWorkdays = habit.goal || 0;
+      habitForEdit.goalWeekends = habit.goal || 0;
+    }
+    
+    setEditingHabit(habitForEdit);
+    setIsEditModalOpen(true);
+  };
+
+  const handleEditHabitSubmit = (e) => {
+    e.preventDefault();
+    if (!editingHabit || !editingHabit.name.trim()) return;
+    updateHabit(editingHabit.id, editingHabit);
   };
 
   const toggleHabit = (habit, date = selectedDate) => {
@@ -469,6 +629,7 @@ export default function App() {
                 habits={habits}
                 onAddHabit={() => setIsModalOpen(true)}
                 onRemoveHabit={removeHabit}
+                onEditHabit={handleEditHabit}
               />
             )}
 
@@ -502,6 +663,17 @@ export default function App() {
         newHabit={newHabit}
         onHabitChange={setNewHabit}
         onSubmit={addHabit}
+      />
+
+      <EditHabitModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setEditingHabit(null);
+        }}
+        habit={editingHabit}
+        onHabitChange={setEditingHabit}
+        onSubmit={handleEditHabitSubmit}
       />
     </div>
   );
