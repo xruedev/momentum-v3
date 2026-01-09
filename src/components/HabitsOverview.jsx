@@ -1,4 +1,4 @@
-import { Plus, Target, Hash, Trash2, Edit } from 'lucide-react';
+import { Plus, Target, Clock, Trash2, Edit } from 'lucide-react';
 
 export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEditHabit }) {
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; // Mantener orden para compatibilidad con índices
@@ -61,7 +61,7 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEd
                     } else if (habitType === 'todont') {
                       return <Target className="w-5 h-5 text-red-600" />;
                     } else {
-                      return <Hash className="w-5 h-5 text-blue-600" />;
+                      return <Clock className="w-5 h-5 text-blue-600" />;
                     }
                   })()}
                   <h3 className="font-medium text-gray-800">{habit.name}</h3>

@@ -22,6 +22,7 @@ export default function App() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [focusMode, setFocusMode] = useState(false);
   
   const [newHabit, setNewHabit] = useState({ 
     name: '', 
@@ -485,6 +486,23 @@ export default function App() {
     }
   };
 
+  // Función para actualizar múltiples hábitos con nuevos orders (para confirmar ordenación)
+  const updateMultipleHabitOrders = async (orderUpdates) => {
+    if (!user || !orderUpdates || Object.keys(orderUpdates).length === 0) return;
+    
+    try {
+      // Actualizar todos los hábitos afectados en Firebase
+      const updatePromises = Object.entries(orderUpdates).map(([habitId, newOrder]) => {
+        return updateDoc(doc(db, 'habits', habitId), { order: newOrder });
+      });
+      
+      await Promise.all(updatePromises);
+    } catch (err) {
+      console.error('Error al actualizar múltiples órdenes:', err);
+      setError("Error al actualizar el orden.");
+    }
+  };
+
   const handleEditHabit = (habit) => {
     // Asegurar que los valores de metas estén correctamente inicializados
     const habitForEdit = { ...habit };
@@ -659,59 +677,76 @@ export default function App() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
-        <AppHeader
-          user={user}
-          onLogout={handleLogout}
-        />
+        {!focusMode && (
+          <AppHeader
+            user={user}
+            onLogout={handleLogout}
+          />
+        )}
 
-        {/* Tabs */}
-        <div className="bg-white rounded-xl shadow-lg mb-6">
-          <div className="flex border-b border-gray-200">
+        {/* Botón discreto para salir del modo foco */}
+        {focusMode && (
+          <div className="mb-4 flex justify-end">
             <button
-              onClick={() => setActiveTab('list')}
-              className={`flex-1 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'list'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
+              onClick={() => setFocusMode(false)}
+              className="text-xs text-gray-500 hover:text-gray-700 px-3 py-1.5 rounded-lg hover:bg-white/50 transition-colors flex items-center gap-1"
+              title="Salir del modo foco"
             >
-              <ListTodo className="w-5 h-5 inline mr-2" />
-              Lista
-            </button>
-            <button
-              onClick={() => setActiveTab('habits')}
-              className={`flex-1 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'habits'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              <Target className="w-5 h-5 inline mr-2" />
-              Hábitos
-            </button>
-            <button
-              onClick={() => setActiveTab('calendar')}
-              className={`flex-1 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'calendar'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              <Calendar className="w-5 h-5 inline mr-2" />
-              Calendario
-            </button>
-            <button
-              onClick={() => setActiveTab('stats')}
-              className={`flex-1 px-6 py-4 font-medium transition-colors ${
-                activeTab === 'stats'
-                  ? 'text-indigo-600 border-b-2 border-indigo-600'
-                  : 'text-gray-600 hover:text-gray-800'
-              }`}
-            >
-              <BarChart3 className="w-5 h-5 inline mr-2" />
-              Estadísticas
+              <X className="w-3 h-3" />
+              Salir del modo foco
             </button>
           </div>
+        )}
+
+        {/* Tabs */}
+        {!focusMode && (
+          <div className="bg-white rounded-xl shadow-lg mb-6">
+            <div className="flex border-b border-gray-200">
+              <button
+                onClick={() => setActiveTab('list')}
+                className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                  activeTab === 'list'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <ListTodo className="w-5 h-5 inline mr-2" />
+                Lista
+              </button>
+              <button
+                onClick={() => setActiveTab('habits')}
+                className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                  activeTab === 'habits'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <Target className="w-5 h-5 inline mr-2" />
+                Hábitos
+              </button>
+              <button
+                onClick={() => setActiveTab('calendar')}
+                className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                  activeTab === 'calendar'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <Calendar className="w-5 h-5 inline mr-2" />
+                Calendario
+              </button>
+              <button
+                onClick={() => setActiveTab('stats')}
+                className={`flex-1 px-6 py-4 font-medium transition-colors ${
+                  activeTab === 'stats'
+                    ? 'text-indigo-600 border-b-2 border-indigo-600'
+                    : 'text-gray-600 hover:text-gray-800'
+                }`}
+              >
+                <BarChart3 className="w-5 h-5 inline mr-2" />
+                Estadísticas
+              </button>
+            </div>
 
           {/* Error Message */}
           {error && (
@@ -726,50 +761,74 @@ export default function App() {
             </div>
           )}
 
-          {/* Tab Content */}
-          <div className="p-6">
-            {activeTab === 'list' && (
-              <HabitsList
-                habits={habits}
-                selectedDate={selectedDate}
-                onToggleHabit={toggleHabit}
-                onDecrementHabit={decrementHabit}
-                onUpdateProgress={updateProgress}
-                onUpdateHabitOrder={updateHabitOrder}
-                stats={stats}
-                today={today}
-                getGoalForDate={getGoalForDate}
-              />
-            )}
+            {/* Tab Content */}
+            <div className="p-6">
+              {activeTab === 'list' && (
+                <HabitsList
+                  habits={habits}
+                  selectedDate={selectedDate}
+                  onToggleHabit={toggleHabit}
+                  onDecrementHabit={decrementHabit}
+                  onUpdateProgress={updateProgress}
+                  onUpdateHabitOrder={updateHabitOrder}
+                  onUpdateMultipleHabitOrders={updateMultipleHabitOrders}
+                  stats={stats}
+                  today={today}
+                  getGoalForDate={getGoalForDate}
+                  focusMode={focusMode}
+                  setFocusMode={setFocusMode}
+                />
+              )}
 
-            {activeTab === 'habits' && (
-              <HabitsOverview
-                habits={habits}
-                onAddHabit={() => setIsModalOpen(true)}
-                onRemoveHabit={removeHabit}
-                onEditHabit={handleEditHabit}
-              />
-            )}
+              {activeTab === 'habits' && (
+                <HabitsOverview
+                  habits={habits}
+                  onAddHabit={() => setIsModalOpen(true)}
+                  onRemoveHabit={removeHabit}
+                  onEditHabit={handleEditHabit}
+                />
+              )}
 
-            {activeTab === 'calendar' && (
-              <HabitsCalendar
-                habits={habits}
-                selectedDate={selectedDate}
-                today={today}
-                onDateSelect={setSelectedDate}
-                onPreviousDay={() => changeDate(-1)}
-                onNextDay={() => changeDate(1)}
-                onTodayClick={() => setSelectedDate(today)}
-                formatDate={formatDate}
-                getGoalForDate={getGoalForDate}
-              />
-            )}
+              {activeTab === 'calendar' && (
+                <HabitsCalendar
+                  habits={habits}
+                  selectedDate={selectedDate}
+                  today={today}
+                  onDateSelect={setSelectedDate}
+                  onPreviousDay={() => changeDate(-1)}
+                  onNextDay={() => changeDate(1)}
+                  onTodayClick={() => setSelectedDate(today)}
+                  formatDate={formatDate}
+                  getGoalForDate={getGoalForDate}
+                />
+              )}
 
-            {activeTab === 'stats' && (
-              <HabitsStats habits={habits} getGoalForDate={getGoalForDate} />
-            )}
+              {activeTab === 'stats' && (
+                <HabitsStats habits={habits} getGoalForDate={getGoalForDate} />
+              )}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Contenido en modo foco - solo lista de hábitos */}
+        {focusMode && (
+          <div className="bg-white rounded-xl shadow-lg p-6">
+            <HabitsList
+              habits={habits}
+              selectedDate={selectedDate}
+              onToggleHabit={toggleHabit}
+              onDecrementHabit={decrementHabit}
+              onUpdateProgress={updateProgress}
+              onUpdateHabitOrder={updateHabitOrder}
+              onUpdateMultipleHabitOrders={updateMultipleHabitOrders}
+              stats={stats}
+              today={today}
+              getGoalForDate={getGoalForDate}
+              focusMode={focusMode}
+              setFocusMode={setFocusMode}
+            />
+          </div>
+        )}
       </div>
 
       <AddHabitModal

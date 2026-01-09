@@ -1,5 +1,5 @@
-import { useState, useMemo } from 'react';
-import { CheckCircle2, Circle, Calendar, List, Plus, Check, X, ChevronUp, ChevronDown } from 'lucide-react';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import { CheckCircle2, Circle, Calendar, List, Plus, Check, X, ChevronUp, ChevronDown, Filter, ArrowUpDown, Save, Focus } from 'lucide-react';
 
 // Función para calcular el número de semana del año (ISO 8601)
 function getWeekNumber(date) {
@@ -36,12 +36,46 @@ function formatDateSpanish(dateString) {
   return `${day} de ${month}`;
 }
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, onUpdateHabitOrder, stats, today, getGoalForDate }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, onUpdateHabitOrder, onUpdateMultipleHabitOrders, stats, today, getGoalForDate, focusMode = false, setFocusMode }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
   const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
+  const [showFilters, setShowFilters] = useState(false); // Controlar visibilidad de filtros
+  const [showActionsMenu, setShowActionsMenu] = useState(false); // Controlar visibilidad del menú de acciones
+  const [isSortingMode, setIsSortingMode] = useState(false); // Modo de ordenar hábitos
+  const [temporaryOrder, setTemporaryOrder] = useState({}); // Orden temporal: { habitId: order }
   const [expandedHoursHabits, setExpandedHoursHabits] = useState(new Set()); // Set de IDs de hábitos tipo horas expandidos
   // Estado para trackear cambios sin guardar: { habitId: { dateString: value } }
   const [unsavedChanges, setUnsavedChanges] = useState({});
+  const actionsMenuRef = useRef(null);
+
+  // Cerrar el menú de acciones cuando se hace clic fuera
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(event.target)) {
+        setShowActionsMenu(false);
+      }
+    };
+
+    if (showActionsMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showActionsMenu]);
+
+  // Función para cerrar el menú de acciones con confirmación si está en modo ordenar
+  const handleCloseActionsMenu = () => {
+    if (isSortingMode) {
+      const confirmed = window.confirm('¿Deseas salir del modo de ordenar?');
+      if (!confirmed) {
+        return;
+      }
+      setIsSortingMode(false);
+    }
+    setShowActionsMenu(false);
+  };
 
   // Filtrar hábitos según el día de la semana seleccionado
   const getDayOfWeek = (dateString) => {
@@ -137,17 +171,22 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
       }
     });
     
-    // Ordenar cada grupo por campo order (o createdAt si no tiene order)
+    // Ordenar cada grupo por campo order (usando orden temporal si está en modo ordenar)
     Object.keys(grouped).forEach(type => {
       grouped[type].sort((a, b) => {
-        const orderA = a.order !== undefined ? a.order : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
-        const orderB = b.order !== undefined ? b.order : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        // Si estamos en modo ordenar y hay orden temporal, usarlo; si no, usar order real
+        const orderA = isSortingMode && temporaryOrder[a.id] !== undefined 
+          ? temporaryOrder[a.id] 
+          : (a.order !== undefined ? a.order : (a.createdAt ? new Date(a.createdAt).getTime() : 0));
+        const orderB = isSortingMode && temporaryOrder[b.id] !== undefined 
+          ? temporaryOrder[b.id] 
+          : (b.order !== undefined ? b.order : (b.createdAt ? new Date(b.createdAt).getTime() : 0));
         return orderA - orderB;
       });
     });
     
     return grouped;
-  }, [filteredHabits]);
+  }, [filteredHabits, isSortingMode, temporaryOrder]);
 
   // Función auxiliar para obtener el estado de un hábito en una fecha
   const getHabitStatus = (habit, dateString) => {
@@ -252,11 +291,165 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     });
   };
 
-  // Función para manejar el movimiento de hábitos
+  // Función para manejar el movimiento de hábitos (solo actualiza orden temporal)
   const handleMoveHabit = (habitId, direction) => {
-    if (onUpdateHabitOrder) {
-      onUpdateHabitOrder(habitId, direction);
+    if (!isSortingMode) return;
+    
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    // Determinar el tipo del hábito
+    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+    
+    // Obtener todos los hábitos del mismo tipo con orden actual (temporal o real)
+    const habitsOfSameType = filteredHabits
+      .filter(h => {
+        const hType = h.type === 'boolean' ? 'todo' : (h.type === 'numeric' ? 'horas' : h.type);
+        return hType === habitType;
+      })
+      .map(h => ({
+        ...h,
+        order: temporaryOrder[h.id] !== undefined ? temporaryOrder[h.id] : (h.order !== undefined ? h.order : 0)
+      }))
+      .sort((a, b) => a.order - b.order);
+    
+    // Encontrar el índice del hábito actual
+    const currentIndex = habitsOfSameType.findIndex(h => h.id === habitId);
+    if (currentIndex === -1) return;
+    
+    // Determinar el índice del hábito adyacente
+    let targetIndex;
+    if (direction === 'up') {
+      targetIndex = currentIndex - 1;
+      if (targetIndex < 0) return;
+    } else if (direction === 'down') {
+      targetIndex = currentIndex + 1;
+      if (targetIndex >= habitsOfSameType.length) return;
+    } else {
+      return;
     }
+    
+    const targetHabit = habitsOfSameType[targetIndex];
+    
+    // Intercambiar los orders en el estado temporal
+    const currentOrder = habitsOfSameType[currentIndex].order;
+    const targetOrder = habitsOfSameType[targetIndex].order;
+    
+    setTemporaryOrder(prev => ({
+      ...prev,
+      [habitId]: targetOrder,
+      [targetHabit.id]: currentOrder
+    }));
+  };
+
+  // Función para activar el modo de ordenar
+  const enterSortingMode = () => {
+    setIsSortingMode(true);
+    setTemporaryOrder({}); // Inicializar orden temporal vacío
+    setShowActionsMenu(false);
+  };
+
+  // Función para confirmar los cambios de orden y guardarlos en Firebase
+  const confirmSorting = async () => {
+    if (!onUpdateMultipleHabitOrders) {
+      setIsSortingMode(false);
+      setTemporaryOrder({});
+      return;
+    }
+    
+    // Calcular los nuevos orders para todos los hábitos
+    // Necesitamos actualizar todos los hábitos del mismo tipo para asegurar orders secuenciales
+    const orderUpdates = {};
+    
+    // Agrupar hábitos por tipo
+    const habitsByType = {
+      todo: [],
+      todont: [],
+      horas: []
+    };
+    
+    habits.forEach(habit => {
+      const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+      if (habitType === 'todo') {
+        habitsByType.todo.push(habit);
+      } else if (habitType === 'todont') {
+        habitsByType.todont.push(habit);
+      } else if (habitType === 'horas') {
+        habitsByType.horas.push(habit);
+      }
+    });
+    
+    // Para cada tipo, calcular los nuevos orders secuenciales
+    Object.keys(habitsByType).forEach(type => {
+      const typeHabits = habitsByType[type];
+      
+      if (typeHabits.length === 0) return;
+      
+      // Crear mapa de orders finales (usando temporal si existe, sino el real)
+      const finalOrders = typeHabits.map(habit => ({
+        habit,
+        finalOrder: temporaryOrder[habit.id] !== undefined 
+          ? temporaryOrder[habit.id] 
+          : (habit.order !== undefined ? habit.order : (habit.createdAt ? new Date(habit.createdAt).getTime() : 0))
+      }));
+      
+      // Ordenar por order final
+      finalOrders.sort((a, b) => a.finalOrder - b.finalOrder);
+      
+      // Asignar nuevos orders secuenciales basados en la nueva posición (empezando desde 0)
+      finalOrders.forEach((item, index) => {
+        const newOrder = index;
+        const currentOrder = item.habit.order !== undefined ? item.habit.order : -1;
+        
+        // Actualizar si el order cambió o si no tenía order asignado
+        if (newOrder !== currentOrder) {
+          orderUpdates[item.habit.id] = newOrder;
+        }
+      });
+    });
+    
+    // Actualizar todos los hábitos afectados en Firebase
+    if (Object.keys(orderUpdates).length > 0) {
+      await onUpdateMultipleHabitOrders(orderUpdates);
+    }
+    
+    // Limpiar estado y salir del modo ordenar
+    setTemporaryOrder({});
+    setIsSortingMode(false);
+  };
+
+  // Función para cancelar los cambios de orden
+  const cancelSorting = () => {
+    const confirmed = window.confirm('¿Deseas descartar los cambios de orden?');
+    if (confirmed) {
+      setTemporaryOrder({});
+      setIsSortingMode(false);
+    }
+  };
+
+  // Función para salir del modo de ordenar con confirmación
+  const exitSortingMode = () => {
+    const hasChanges = Object.keys(temporaryOrder).length > 0;
+    if (hasChanges) {
+      const confirmed = window.confirm('¿Deseas salir del modo de ordenar? Los cambios no guardados se perderán.');
+      if (!confirmed) {
+        return;
+      }
+    }
+    setTemporaryOrder({});
+    setIsSortingMode(false);
+  };
+
+  // Función para manejar cambio de vista con confirmación si está en modo ordenar
+  const handleViewTypeChange = (newViewType) => {
+    if (isSortingMode && viewType !== newViewType) {
+      const confirmed = window.confirm('¿Deseas salir del modo de ordenar para cambiar de vista?');
+      if (!confirmed) {
+        return;
+      }
+      setIsSortingMode(false);
+    }
+    setViewType(newViewType);
   };
 
   // Función para verificar si un hábito puede moverse en una dirección
@@ -333,10 +526,10 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     const hasUnsavedChanges = unsavedChanges[habit.id] && Object.keys(unsavedChanges[habit.id]).length > 0;
     
     return (
-      <td 
-        key="aggregates"
-        className="p-3 text-center border-l-4 border-indigo-300 bg-indigo-50/30 font-medium min-w-[150px]"
-      >
+        <td 
+          key="aggregates"
+          className="py-2 px-3 text-center border-l-4 border-indigo-300 bg-indigo-50/30 font-medium min-w-[150px]"
+        >
         {aggregates.type === 'todo' ? (
           <div className="flex items-center justify-center gap-1">
             <span className={`text-sm font-semibold ${
@@ -426,7 +619,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
       return (
         <td 
           key={dateString}
-          className={`p-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
+          className={`py-1.5 px-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
         >
           {habitAppliesToDay ? (
             isExpanded ? (
@@ -471,7 +664,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     return (
       <td 
         key={dateString}
-        className={`p-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
+        className={`py-1.5 px-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
       >
         {habitAppliesToDay ? (
           <button
@@ -494,36 +687,124 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
 
   return (
     <div>
-      {/* Selector de vista */}
-      <div className="mb-4 flex items-center justify-between">
-        <div className="flex gap-2">
-          <button
-            onClick={() => setViewType('weekly')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              viewType === 'weekly'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <Calendar className="w-4 h-4" />
-            Semanal
-          </button>
-          <button
-            onClick={() => setViewType('daily')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              viewType === 'daily'
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <List className="w-4 h-4" />
-            Diaria
-          </button>
+      {/* Selector de vista - oculto en modo foco */}
+      {!focusMode && (
+        <div className="mb-4 flex items-center justify-between">
+          <div className="flex gap-2 items-center">
+            <button
+              onClick={() => handleViewTypeChange('weekly')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                viewType === 'weekly'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <Calendar className="w-4 h-4" />
+              Semanal
+            </button>
+            <button
+              onClick={() => handleViewTypeChange('daily')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                viewType === 'daily'
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              <List className="w-4 h-4" />
+              Diaria
+            </button>
+            {/* Indicador visual del modo ordenar con botones de confirmar y cancelar */}
+            {isSortingMode && (
+              <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-100 border border-yellow-300 rounded-lg text-sm font-medium text-yellow-800">
+                <ArrowUpDown className="w-4 h-4" />
+                <span>Modo ordenar activo</span>
+                <div className="flex items-center gap-1 ml-2 border-l border-yellow-300 pl-2">
+                  <button
+                    onClick={confirmSorting}
+                    className="flex items-center gap-1 px-2 py-1 bg-green-600 text-white rounded hover:bg-green-700 transition-colors text-xs"
+                    title="Confirmar cambios"
+                  >
+                    <Check className="w-3 h-3" />
+                    Confirmar
+                  </button>
+                  <button
+                    onClick={cancelSorting}
+                    className="flex items-center gap-1 px-2 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-xs"
+                    title="Cancelar cambios"
+                  >
+                    <X className="w-3 h-3" />
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="relative" ref={actionsMenuRef}>
+            <button
+              onClick={() => {
+                if (showActionsMenu && isSortingMode) {
+                  handleCloseActionsMenu();
+                } else {
+                  setShowActionsMenu(!showActionsMenu);
+                }
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                showActionsMenu || isSortingMode
+                  ? 'bg-indigo-600 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              Acciones
+              <ChevronDown className={`w-4 h-4 transition-transform ${showActionsMenu ? 'rotate-180' : ''}`} />
+            </button>
+            
+            {/* Menú desplegable */}
+            {showActionsMenu && (
+              <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-50">
+                <button
+                  onClick={() => {
+                    if (isSortingMode) {
+                      const confirmed = window.confirm('¿Deseas salir del modo de ordenar para abrir los filtros?');
+                      if (!confirmed) {
+                        return;
+                      }
+                      setIsSortingMode(false);
+                    }
+                    setShowFilters(true);
+                    setShowActionsMenu(false);
+                  }}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors first:rounded-t-lg"
+                >
+                  <Filter className="w-4 h-4" />
+                  Añadir filtros
+                </button>
+                <button
+                  onClick={enterSortingMode}
+                  className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                >
+                  <ArrowUpDown className="w-4 h-4" />
+                  Ordenar hábitos
+                </button>
+                {setFocusMode && (
+                  <button
+                    onClick={() => {
+                      setFocusMode(true);
+                      setShowActionsMenu(false);
+                    }}
+                    className="w-full flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors last:rounded-b-lg"
+                  >
+                    <Focus className="w-4 h-4" />
+                    Modo foco
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Estadísticas discretas - solo en vista diaria */}
-      {viewType === 'daily' && stats && (
+      {/* Estadísticas discretas - solo en vista diaria y no en modo foco */}
+      {!focusMode && viewType === 'daily' && stats && (
         <div className="mb-4 pb-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 text-sm">
             <div className="flex items-center gap-2">
@@ -548,27 +829,44 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
         </div>
       )}
       
-      {/* Filtros por tipo - siempre visibles */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {[
-          { value: 'todos', label: 'Todos' },
-          { value: 'todo', label: 'To Do' },
-          { value: 'todont', label: "To Don't" },
-          { value: 'horas', label: 'Horas' }
-        ].map((filter) => (
-          <button
-            key={filter.value}
-            onClick={() => setFilterType(filter.value)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              filterType === filter.value
-                ? 'bg-indigo-600 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
-      </div>
+      {/* Filtros por tipo - mostrados condicionalmente y no en modo foco */}
+      {!focusMode && showFilters && (
+        <div className="mb-4 bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 flex-1 flex-wrap">
+              <Filter className="w-4 h-4 text-gray-500 flex-shrink-0" />
+              {[
+                { value: 'todos', label: 'Todos' },
+                { value: 'todo', label: 'To Do' },
+                { value: 'todont', label: "To Don't" },
+                { value: 'horas', label: 'Horas' }
+              ].map((filter) => (
+                <button
+                  key={filter.value}
+                  onClick={() => setFilterType(filter.value)}
+                  className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors border ${
+                    filterType === filter.value
+                      ? 'bg-indigo-50 text-indigo-700 border-indigo-300'
+                      : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100 hover:border-gray-300'
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => {
+                setShowFilters(false);
+                setFilterType('todos'); // Resetear filtro a "todos" al cerrar
+              }}
+              className="p-1.5 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors flex-shrink-0"
+              aria-label="Cerrar filtros"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Contenido de hábitos */}
       {habits.length === 0 ? (
@@ -597,10 +895,10 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
         <div className="overflow-x-auto">
           <table className="w-full border-collapse bg-white rounded-lg shadow-sm">
             <thead className="border-t-2 border-x-2 border-gray-300">
-              {/* Fila con indicador de semana */}
-              {weekInfo && (
+              {/* Fila con indicador de semana - oculto en modo foco */}
+              {!focusMode && weekInfo && (
                 <tr className="bg-gray-50 border-b-2 border-gray-300">
-                  <th colSpan={9} className="p-3 text-center text-sm font-semibold text-gray-700">
+                  <th colSpan={9} className="py-2 px-3 text-center text-sm font-semibold text-gray-700">
                     {weekInfo.startDate} - {weekInfo.endDate}
                     <span className="mx-2 text-gray-400">•</span>
                     Semana {weekInfo.weekNumber}/{weekInfo.totalWeeks}
@@ -608,7 +906,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                 </tr>
               )}
               <tr className="bg-gray-50 border-b-2 border-gray-300">
-                <th className="p-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50 z-10 min-w-[200px] border-l-2 border-gray-300">
+                <th className="py-2 px-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50 z-10 min-w-[200px] border-l-2 border-gray-300">
                   Hábito
                 </th>
                 {weekDates.map((date) => {
@@ -620,7 +918,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                   return (
                     <th 
                       key={date}
-                      className={`p-3 text-center text-xs font-semibold border-r border-gray-200 ${
+                      className={`py-2 px-3 text-center text-xs font-semibold border-r border-gray-200 ${
                         allCompleted
                           ? 'bg-green-100 text-green-700'
                           : isToday
@@ -635,7 +933,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     </th>
                   );
                 })}
-                <th className="p-3 text-center text-sm font-semibold text-gray-700 border-l-4 border-indigo-300 bg-indigo-50/50 min-w-[150px] border-r-2 border-gray-300">
+                <th className="py-2 px-3 text-center text-sm font-semibold text-gray-700 border-l-4 border-indigo-300 bg-indigo-50/50 min-w-[150px] border-r-2 border-gray-300">
                   Totales
                 </th>
               </tr>
@@ -645,7 +943,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.todo.length > 0 && (
                 <>
                   <tr className="bg-green-50/30 border-t-2 border-gray-300">
-                    <td colSpan={9} className="p-2 text-xs font-semibold text-green-700 uppercase">
+                    <td colSpan={9} className="py-1.5 px-2 text-xs font-semibold text-green-700 uppercase">
                       To Do
                     </td>
                   </tr>
@@ -654,10 +952,10 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       key={habit.id}
                       className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     >
-                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                      <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                         <div className="flex items-center gap-2">
                           <span className="flex-1">{habit.name}</span>
-                          {viewType === 'weekly' && (
+                          {viewType === 'weekly' && isSortingMode && (
                             <div className="flex flex-col gap-0.5">
                               <button
                                 onClick={() => handleMoveHabit(habit.id, 'up')}
@@ -700,7 +998,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.todont.length > 0 && (
                 <>
                   <tr className={`bg-red-50/30 ${habitsByType.todo.length === 0 ? 'border-t-2 border-gray-300' : ''}`}>
-                    <td colSpan={9} className="p-2 text-xs font-semibold text-red-700 uppercase">
+                    <td colSpan={9} className="py-1.5 px-2 text-xs font-semibold text-red-700 uppercase">
                       To Don&apos;t
                     </td>
                   </tr>
@@ -709,10 +1007,10 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       key={habit.id}
                       className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     >
-                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                      <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                         <div className="flex items-center gap-2">
                           <span className="flex-1">{habit.name}</span>
-                          {viewType === 'weekly' && (
+                          {viewType === 'weekly' && isSortingMode && (
                             <div className="flex flex-col gap-0.5">
                               <button
                                 onClick={() => handleMoveHabit(habit.id, 'up')}
@@ -755,7 +1053,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.horas.length > 0 && (
                 <>
                   <tr className={`bg-blue-50/30 ${habitsByType.todo.length === 0 && habitsByType.todont.length === 0 ? 'border-t-2 border-gray-300' : ''}`}>
-                    <td colSpan={9} className="p-2 text-xs font-semibold text-blue-700 uppercase">
+                    <td colSpan={9} className="py-1.5 px-2 text-xs font-semibold text-blue-700 uppercase">
                       Horas
                     </td>
                   </tr>
@@ -767,7 +1065,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                         key={habit.id}
                         className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                       >
-                        <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                        <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                           <div className="flex items-center gap-2">
                             <span className="flex-1">{habit.name}</span>
                             <div className="flex items-center gap-1">
@@ -805,7 +1103,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                                   <Plus className="w-3.5 h-3.5" />
                                 </button>
                               )}
-                              {viewType === 'weekly' && (
+                              {viewType === 'weekly' && isSortingMode && (
                                 <div className="flex flex-col gap-0.5 ml-1">
                                   <button
                                     onClick={() => handleMoveHabit(habit.id, 'up')}
