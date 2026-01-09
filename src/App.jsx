@@ -4,7 +4,6 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { db, auth, firebaseError } from './firebase';
 import { Loader2, X, BarChart3, ListTodo, Calendar, Target } from 'lucide-react';
 import AppHeader from './components/AppHeader';
-import StatsCard from './components/StatsCard';
 import HabitsList from './components/HabitsList';
 import HabitsOverview from './components/HabitsOverview';
 import HabitsCalendar from './components/HabitsCalendar';
@@ -230,7 +229,6 @@ export default function App() {
     }
   };
 
-
   // Mostrar Login si no hay usuario y no está cargando autenticación
   if (!user && !authLoading && !firebaseError) {
     return <Login onLoginSuccess={(user) => setUser(user)} />;
@@ -332,21 +330,8 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100">
       <div className="container mx-auto px-4 py-8 max-w-4xl">
         <AppHeader
-          selectedDate={selectedDate}
-          today={today}
-          onDateChange={setSelectedDate}
-          onPreviousDay={() => changeDate(-1)}
-          onNextDay={() => changeDate(1)}
-          onTodayClick={() => setSelectedDate(today)}
-          formatDate={formatDate}
           user={user}
           onLogout={handleLogout}
-        />
-
-        <StatsCard
-          stats={stats}
-          selectedDate={selectedDate}
-          today={today}
         />
 
         {/* Tabs */}
@@ -419,6 +404,8 @@ export default function App() {
                 selectedDate={selectedDate}
                 onToggleHabit={toggleHabit}
                 onDecrementHabit={decrementHabit}
+                stats={stats}
+                today={today}
               />
             )}
 
@@ -436,6 +423,10 @@ export default function App() {
                 selectedDate={selectedDate}
                 today={today}
                 onDateSelect={setSelectedDate}
+                onPreviousDay={() => changeDate(-1)}
+                onNextDay={() => changeDate(1)}
+                onTodayClick={() => setSelectedDate(today)}
+                formatDate={formatDate}
               />
             )}
 

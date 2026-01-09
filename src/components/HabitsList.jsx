@@ -1,6 +1,6 @@
 import { CheckCircle2, Circle } from 'lucide-react';
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, stats, today }) {
   // Filtrar hábitos según el día de la semana seleccionado
   const getDayOfWeek = (dateString) => {
     const date = new Date(dateString);
@@ -38,6 +38,32 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
 
   return (
     <div>
+      {/* Estadísticas discretas */}
+      {stats && (
+        <div className="mb-4 pb-4 border-b border-gray-200">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 text-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-gray-600">
+                {selectedDate === today ? 'Hoy' : 'Completados'}:
+              </span>
+              <span className="font-semibold text-indigo-600">
+                {stats.completedForDate}/{stats.total}
+              </span>
+            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Progreso:</span>
+                <span className="font-semibold text-green-600">{stats.percentForDate}%</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-gray-600">Total acciones:</span>
+                <span className="font-semibold text-purple-600">{stats.totalActions}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="space-y-3">
         {filteredHabits.map((habit) => {
           const dateValue = habit.history?.[selectedDate];

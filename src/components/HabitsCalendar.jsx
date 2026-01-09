@@ -1,6 +1,6 @@
-import { Calendar } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
-export default function HabitsCalendar({ habits, selectedDate, today, onDateSelect }) {
+export default function HabitsCalendar({ habits, selectedDate, today, onDateSelect, onPreviousDay, onNextDay, onTodayClick, formatDate }) {
   if (habits.length === 0) {
     return (
       <div className="text-center py-12">
@@ -96,6 +96,52 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
 
   return (
     <div>
+      {/* Selector de Fecha */}
+      <div className="flex items-center gap-4 bg-gray-50 rounded-lg p-3 mb-6">
+        <button
+          onClick={onPreviousDay}
+          className="p-2 hover:bg-white rounded-lg transition-colors"
+          title="Día anterior"
+          aria-label="Día anterior"
+        >
+          <ChevronLeft className="w-5 h-5 text-gray-600" />
+        </button>
+        <div className="flex-1 text-center">
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => onDateSelect(e.target.value)}
+            max={today}
+            className="text-lg font-semibold text-gray-800 bg-transparent border-none focus:outline-none cursor-pointer"
+          />
+          <p className="text-sm text-gray-500 mt-1">{formatDate(selectedDate)}</p>
+          <p className="text-xs font-medium text-indigo-600 mt-0.5">
+            {(() => {
+              const date = new Date(selectedDate);
+              const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+              return dayNames[date.getDay()];
+            })()}
+          </p>
+        </div>
+        <button
+          onClick={onNextDay}
+          disabled={selectedDate >= today}
+          className="p-2 hover:bg-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          title="Día siguiente"
+          aria-label="Día siguiente"
+        >
+          <ChevronRight className="w-5 h-5 text-gray-600" />
+        </button>
+        {selectedDate !== today && (
+          <button
+            onClick={onTodayClick}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors text-sm"
+          >
+            Hoy
+          </button>
+        )}
+      </div>
+
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Historial de los últimos 30 días</h3>
       <div className="grid grid-cols-7 gap-2">
         {/* Headers de días de la semana */}
