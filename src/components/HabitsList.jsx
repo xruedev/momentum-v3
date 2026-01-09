@@ -1,9 +1,12 @@
 import { useState, useMemo } from 'react';
-import { CheckCircle2, Circle, XCircle, Calendar, List } from 'lucide-react';
+import { CheckCircle2, Circle, XCircle, Calendar, List, Plus, Minus, Check, X } from 'lucide-react';
 
 export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
   const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
+  const [expandedHoursHabits, setExpandedHoursHabits] = useState(new Set()); // Set de IDs de hábitos tipo horas expandidos
+  // Estado para trackear cambios sin guardar: { habitId: { dateString: value } }
+  const [unsavedChanges, setUnsavedChanges] = useState({});
 
   // Filtrar hábitos según el día de la semana seleccionado
   const getDayOfWeek = (dateString) => {
@@ -101,6 +104,91 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     return { isCompleted: false, value: null };
   };
 
+  // Función para toggle de expansión de hábitos tipo horas
+  const toggleHoursExpansion = (habitId) => {
+    // Si está expandido y hay cambios sin guardar, pedir confirmación
+    if (expandedHoursHabits.has(habitId) && unsavedChanges[habitId]) {
+      const hasChanges = Object.keys(unsavedChanges[habitId]).length > 0;
+      if (hasChanges) {
+        const confirmed = window.confirm('¿Deseas descartar los cambios sin guardar?');
+        if (!confirmed) {
+          return; // No cerrar si el usuario cancela
+        }
+      }
+      // Limpiar cambios sin guardar al cerrar
+      setUnsavedChanges(prev => {
+        const newChanges = { ...prev };
+        delete newChanges[habitId];
+        return newChanges;
+      });
+    }
+    
+    setExpandedHoursHabits(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(habitId)) {
+        newSet.delete(habitId);
+      } else {
+        newSet.add(habitId);
+      }
+      return newSet;
+    });
+  };
+
+  // Función para guardar cambios de un hábito expandido
+  const saveHoursChanges = (habitId) => {
+    const changes = unsavedChanges[habitId];
+    if (!changes) return;
+    
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    // Aplicar todos los cambios
+    Object.entries(changes).forEach(([dateString, value]) => {
+      onUpdateProgress(habit, value, dateString);
+    });
+    
+    // Limpiar cambios guardados
+    setUnsavedChanges(prev => {
+      const newChanges = { ...prev };
+      delete newChanges[habitId];
+      return newChanges;
+    });
+    
+    // Cerrar vista expandida
+    setExpandedHoursHabits(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(habitId);
+      return newSet;
+    });
+  };
+
+  // Función para manejar cambios en inputs expandidos (sin guardar inmediatamente)
+  const handleExpandedInputChange = (habit, dateString, newValue) => {
+    setUnsavedChanges(prev => {
+      const habitChanges = prev[habit.id] || {};
+      // Si el valor es igual al original, no guardarlo como cambio
+      const originalValue = Number(habit.history?.[dateString] || 0);
+      if (newValue === originalValue) {
+        // Eliminar el cambio si vuelve al valor original
+        const newHabitChanges = { ...habitChanges };
+        delete newHabitChanges[dateString];
+        if (Object.keys(newHabitChanges).length === 0) {
+          const newChanges = { ...prev };
+          delete newChanges[habit.id];
+          return newChanges;
+        }
+        return { ...prev, [habit.id]: newHabitChanges };
+      }
+      return {
+        ...prev,
+        [habit.id]: {
+          ...habitChanges,
+          [dateString]: newValue
+        }
+      };
+    });
+  };
+
   // Función para renderizar celda de hábito en la tabla semanal
   const renderHabitCell = (habit, dateString) => {
     const { isCompleted, value } = getHabitStatus(habit, dateString);
@@ -115,32 +203,50 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     const isDisabled = isFuture || !habitAppliesToDay;
     
     if (habitType === 'horas') {
+      const isExpanded = expandedHoursHabits.has(habit.id);
+      const habitChanges = unsavedChanges[habit.id] || {};
+      const displayValue = isExpanded && habitChanges[dateString] !== undefined 
+        ? habitChanges[dateString] 
+        : value;
+      
       return (
         <td 
           key={dateString}
           className={`p-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
         >
           {habitAppliesToDay ? (
-            <div className="flex flex-col items-center gap-1">
+            isExpanded ? (
               <input
                 type="number"
                 min="0"
                 step="0.5"
-                value={value}
+                value={displayValue}
                 onChange={(e) => {
                   const newValue = Math.max(0, Number(e.target.value));
-                  onUpdateProgress(habit, newValue, dateString);
+                  handleExpandedInputChange(habit, dateString, newValue);
                 }}
                 disabled={isDisabled}
-                className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-transparent ${
-                  isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''
+                className={`w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all ${
+                  isDisabled ? 'bg-gray-100 cursor-not-allowed' : 'bg-white'
                 }`}
                 placeholder="0"
               />
-              <span className={`text-xs ${isCompleted ? 'text-blue-700 font-semibold' : 'text-gray-500'}`}>
-                / {habit.goal}h
-              </span>
-            </div>
+            ) : (
+              <div className="flex items-center justify-center gap-1">
+                <span className={`text-xs font-medium ${
+                  isDisabled 
+                    ? 'text-gray-400' 
+                    : isCompleted 
+                      ? 'text-blue-700' 
+                      : 'text-gray-600'
+                }`}>
+                  {value || 0}h
+                </span>
+                <span className={`text-xs ${isCompleted ? 'text-blue-700 font-semibold' : 'text-gray-500'}`}>
+                  / {habit.goal}h
+                </span>
+              </div>
+            )
           ) : (
             <span className="text-gray-300 text-xs">-</span>
           )}
@@ -156,8 +262,8 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
         {habitAppliesToDay ? (
           <button
             onClick={() => !isDisabled && onToggleHabit(habit, dateString)}
-            disabled={isDisabled}
-            className={`mx-auto ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+            {...(isDisabled ? { disabled: true } : {})}
+            className={`mx-auto ${isDisabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
           >
             {isCompleted ? (
               habitType === 'todont' ? (
@@ -359,17 +465,57 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       Horas
                     </td>
                   </tr>
-                  {habitsByType.horas.map((habit) => (
-                    <tr 
-                      key={habit.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
-                    >
-                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
-                        {habit.name}
-                      </td>
-                      {weekDates.map(date => renderHabitCell(habit, date))}
-                    </tr>
-                  ))}
+                  {habitsByType.horas.map((habit) => {
+                    const isExpanded = expandedHoursHabits.has(habit.id);
+                    const hasUnsavedChanges = unsavedChanges[habit.id] && Object.keys(unsavedChanges[habit.id]).length > 0;
+                    return (
+                      <tr 
+                        key={habit.id}
+                        className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      >
+                        <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                          <div className="flex items-center gap-2">
+                            <span>{habit.name}</span>
+                            {isExpanded ? (
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => saveHoursChanges(habit.id)}
+                                  disabled={!hasUnsavedChanges}
+                                  className={`p-1.5 rounded-full transition-all ${
+                                    hasUnsavedChanges
+                                      ? 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                  }`}
+                                  title="Guardar cambios"
+                                  aria-label="Guardar cambios"
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => toggleHoursExpansion(habit.id)}
+                                  className="p-1.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm"
+                                  title="Cancelar y descartar cambios"
+                                  aria-label="Cancelar y descartar cambios"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => toggleHoursExpansion(habit.id)}
+                                className="p-1.5 rounded-full bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm"
+                                title="Expandir vista para editar horas"
+                                aria-label="Expandir vista para editar horas"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                        {weekDates.map(date => renderHabitCell(habit, date))}
+                      </tr>
+                    );
+                  })}
                 </>
               )}
             </tbody>
