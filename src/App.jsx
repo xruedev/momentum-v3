@@ -170,6 +170,53 @@ export default function App() {
         try {
           const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
           
+          // Migración automática: asignar order a hábitos que no lo tienen
+          const habitsNeedingMigration = habitsList.filter(habit => habit.order === undefined);
+          if (habitsNeedingMigration.length > 0) {
+            // Agrupar por tipo para asignar orden independiente por tipo
+            const habitsByType = {
+              todo: [],
+              todont: [],
+              horas: []
+            };
+            
+            habitsList.forEach(habit => {
+              const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+              if (habitType === 'todo') {
+                habitsByType.todo.push(habit);
+              } else if (habitType === 'todont') {
+                habitsByType.todont.push(habit);
+              } else if (habitType === 'horas') {
+                habitsByType.horas.push(habit);
+              }
+            });
+            
+            // Asignar order basado en createdAt para cada tipo
+            Object.keys(habitsByType).forEach(type => {
+              const typeHabits = habitsByType[type];
+              
+              // Separar hábitos con y sin order
+              const habitsWithOrder = typeHabits.filter(h => h.order !== undefined);
+              const habitsWithoutOrder = typeHabits.filter(h => h.order === undefined);
+              
+              // Obtener el máximo order existente
+              const maxOrder = habitsWithOrder.reduce((max, h) => Math.max(max, h.order || -1), -1);
+              
+              // Ordenar hábitos sin order por createdAt
+              habitsWithoutOrder.sort((a, b) => {
+                const dateA = a.createdAt ? new Date(a.createdAt) : new Date(0);
+                const dateB = b.createdAt ? new Date(b.createdAt) : new Date(0);
+                return dateA - dateB;
+              });
+              
+              // Asignar order empezando desde maxOrder + 1
+              habitsWithoutOrder.forEach((habit, index) => {
+                updateDoc(doc(db, 'habits', habit.id), { order: maxOrder + 1 + index })
+                  .catch(err => console.error('Error al migrar order:', err));
+              });
+            });
+          }
+          
           // Limpiar duplicados en goalHistory para cada hábito
           const cleanedHabits = habitsList.map(habit => {
             if (habit.goalHistory && habit.goalHistory.length > 0) {
@@ -253,12 +300,27 @@ export default function App() {
     }
     try {
       const habitId = crypto.randomUUID();
+      
+      // Calcular el orden basado en hábitos existentes del mismo tipo
+      const habitType = newHabit.type === 'boolean' ? 'todo' : (newHabit.type === 'numeric' ? 'horas' : newHabit.type);
+      const habitsOfSameType = habits.filter(h => {
+        const hType = h.type === 'boolean' ? 'todo' : (h.type === 'numeric' ? 'horas' : h.type);
+        return hType === habitType;
+      });
+      
+      // Obtener el máximo order de hábitos del mismo tipo, o -1 si no hay ninguno
+      const maxOrder = habitsOfSameType.reduce((max, h) => {
+        const order = h.order !== undefined ? h.order : -1;
+        return Math.max(max, order);
+      }, -1);
+      
       const habitData = {
         ...newHabit,
         userId: user.uid,
         daysOfWeek: newHabit.daysOfWeek || [1, 2, 3, 4, 5, 6, 0],
         createdAt: new Date().toISOString(),
-        history: {}
+        history: {},
+        order: maxOrder + 1 // Asignar el siguiente orden disponible
       };
       
       // Para hábitos tipo "horas", guardar goalWorkdays y goalWeekends (no goal)
@@ -365,6 +427,61 @@ export default function App() {
       setEditingHabit(null);
     } catch (err) {
       setError("Error al actualizar.");
+    }
+  };
+
+  const updateHabitOrder = async (habitId, direction) => {
+    if (!user) return;
+    
+    const habit = habits.find(h => h.id === habitId);
+    if (!habit) return;
+    
+    // Determinar el tipo del hábito
+    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+    
+    // Obtener todos los hábitos del mismo tipo ordenados por order
+    const habitsOfSameType = habits
+      .filter(h => {
+        const hType = h.type === 'boolean' ? 'todo' : (h.type === 'numeric' ? 'horas' : h.type);
+        return hType === habitType;
+      })
+      .sort((a, b) => {
+        const orderA = a.order !== undefined ? a.order : 0;
+        const orderB = b.order !== undefined ? b.order : 0;
+        return orderA - orderB;
+      });
+    
+    // Encontrar el índice del hábito actual
+    const currentIndex = habitsOfSameType.findIndex(h => h.id === habitId);
+    if (currentIndex === -1) return;
+    
+    // Determinar el índice del hábito adyacente
+    let targetIndex;
+    if (direction === 'up') {
+      targetIndex = currentIndex - 1;
+      if (targetIndex < 0) return; // Ya está en la primera posición
+    } else if (direction === 'down') {
+      targetIndex = currentIndex + 1;
+      if (targetIndex >= habitsOfSameType.length) return; // Ya está en la última posición
+    } else {
+      return;
+    }
+    
+    const targetHabit = habitsOfSameType[targetIndex];
+    
+    // Intercambiar los orders
+    const currentOrder = habit.order !== undefined ? habit.order : currentIndex;
+    const targetOrder = targetHabit.order !== undefined ? targetHabit.order : targetIndex;
+    
+    try {
+      // Actualizar ambos hábitos en Firebase
+      await Promise.all([
+        updateDoc(doc(db, 'habits', habitId), { order: targetOrder }),
+        updateDoc(doc(db, 'habits', targetHabit.id), { order: currentOrder })
+      ]);
+    } catch (err) {
+      console.error('Error al actualizar orden:', err);
+      setError("Error al actualizar el orden.");
     }
   };
 
@@ -618,6 +735,7 @@ export default function App() {
                 onToggleHabit={toggleHabit}
                 onDecrementHabit={decrementHabit}
                 onUpdateProgress={updateProgress}
+                onUpdateHabitOrder={updateHabitOrder}
                 stats={stats}
                 today={today}
                 getGoalForDate={getGoalForDate}

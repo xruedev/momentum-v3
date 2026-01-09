@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { CheckCircle2, Circle, Calendar, List, Plus, Check, X } from 'lucide-react';
+import { CheckCircle2, Circle, Calendar, List, Plus, Check, X, ChevronUp, ChevronDown } from 'lucide-react';
 
 // Función para calcular el número de semana del año (ISO 8601)
 function getWeekNumber(date) {
@@ -36,7 +36,7 @@ function formatDateSpanish(dateString) {
   return `${day} de ${month}`;
 }
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today, getGoalForDate }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, onUpdateHabitOrder, stats, today, getGoalForDate }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
   const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
   const [expandedHoursHabits, setExpandedHoursHabits] = useState(new Set()); // Set de IDs de hábitos tipo horas expandidos
@@ -114,7 +114,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     return false;
   });
 
-  // Agrupar hábitos por tipo para la vista semanal
+  // Agrupar hábitos por tipo para la vista semanal y ordenarlos por campo order
   const habitsByType = useMemo(() => {
     const grouped = {
       todo: [],
@@ -135,6 +135,15 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
       } else if (habitType === 'horas') {
         grouped.horas.push(habit);
       }
+    });
+    
+    // Ordenar cada grupo por campo order (o createdAt si no tiene order)
+    Object.keys(grouped).forEach(type => {
+      grouped[type].sort((a, b) => {
+        const orderA = a.order !== undefined ? a.order : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+        const orderB = b.order !== undefined ? b.order : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+        return orderA - orderB;
+      });
     });
     
     return grouped;
@@ -243,6 +252,24 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     });
   };
 
+  // Función para manejar el movimiento de hábitos
+  const handleMoveHabit = (habitId, direction) => {
+    if (onUpdateHabitOrder) {
+      onUpdateHabitOrder(habitId, direction);
+    }
+  };
+
+  // Función para verificar si un hábito puede moverse en una dirección
+  const canMoveHabit = (habitId, direction, typeArray) => {
+    const index = typeArray.findIndex(h => h.id === habitId);
+    if (direction === 'up') {
+      return index > 0;
+    } else if (direction === 'down') {
+      return index < typeArray.length - 1;
+    }
+    return false;
+  };
+
   // Función para calcular agregados semanales de un hábito
   const calculateWeeklyAggregates = (habit) => {
     const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
@@ -303,7 +330,6 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     const aggregates = calculateWeeklyAggregates(habit);
     if (!aggregates) return null;
     
-    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
     const hasUnsavedChanges = unsavedChanges[habit.id] && Object.keys(unsavedChanges[habit.id]).length > 0;
     
     return (
@@ -629,7 +655,39 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     >
                       <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
-                        {habit.name}
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1">{habit.name}</span>
+                          {viewType === 'weekly' && (
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                onClick={() => handleMoveHabit(habit.id, 'up')}
+                                disabled={!canMoveHabit(habit.id, 'up', habitsByType.todo)}
+                                className={`p-1 rounded transition-all ${
+                                  canMoveHabit(habit.id, 'up', habitsByType.todo)
+                                    ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                    : 'text-gray-300 cursor-not-allowed'
+                                }`}
+                                title="Mover arriba"
+                                aria-label="Mover arriba"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveHabit(habit.id, 'down')}
+                                disabled={!canMoveHabit(habit.id, 'down', habitsByType.todo)}
+                                className={`p-1 rounded transition-all ${
+                                  canMoveHabit(habit.id, 'down', habitsByType.todo)
+                                    ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                    : 'text-gray-300 cursor-not-allowed'
+                                }`}
+                                title="Mover abajo"
+                                aria-label="Mover abajo"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       {weekDates.map(date => renderHabitCell(habit, date))}
                       {renderWeeklyAggregates(habit)}
@@ -652,7 +710,39 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
                     >
                       <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
-                        {habit.name}
+                        <div className="flex items-center gap-2">
+                          <span className="flex-1">{habit.name}</span>
+                          {viewType === 'weekly' && (
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                onClick={() => handleMoveHabit(habit.id, 'up')}
+                                disabled={!canMoveHabit(habit.id, 'up', habitsByType.todont)}
+                                className={`p-1 rounded transition-all ${
+                                  canMoveHabit(habit.id, 'up', habitsByType.todont)
+                                    ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                    : 'text-gray-300 cursor-not-allowed'
+                                }`}
+                                title="Mover arriba"
+                                aria-label="Mover arriba"
+                              >
+                                <ChevronUp className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => handleMoveHabit(habit.id, 'down')}
+                                disabled={!canMoveHabit(habit.id, 'down', habitsByType.todont)}
+                                className={`p-1 rounded transition-all ${
+                                  canMoveHabit(habit.id, 'down', habitsByType.todont)
+                                    ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                    : 'text-gray-300 cursor-not-allowed'
+                                }`}
+                                title="Mover abajo"
+                                aria-label="Mover abajo"
+                              >
+                                <ChevronDown className="w-4 h-4" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       {weekDates.map(date => renderHabitCell(habit, date))}
                       {renderWeeklyAggregates(habit)}
@@ -679,41 +769,73 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       >
                         <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                           <div className="flex items-center gap-2">
-                            <span>{habit.name}</span>
-                            {isExpanded ? (
-                              <div className="flex items-center gap-1">
-                                <button
-                                  onClick={() => saveHoursChanges(habit.id)}
-                                  disabled={!hasUnsavedChanges}
-                                  className={`p-1.5 rounded-full transition-all ${
-                                    hasUnsavedChanges
-                                      ? 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
-                                      : 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                  }`}
-                                  title="Guardar cambios"
-                                  aria-label="Guardar cambios"
-                                >
-                                  <Check className="w-3.5 h-3.5" />
-                                </button>
+                            <span className="flex-1">{habit.name}</span>
+                            <div className="flex items-center gap-1">
+                              {isExpanded ? (
+                                <>
+                                  <button
+                                    onClick={() => saveHoursChanges(habit.id)}
+                                    disabled={!hasUnsavedChanges}
+                                    className={`p-1.5 rounded-full transition-all ${
+                                      hasUnsavedChanges
+                                        ? 'bg-green-500 text-white hover:bg-green-600 shadow-sm'
+                                        : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+                                    }`}
+                                    title="Guardar cambios"
+                                    aria-label="Guardar cambios"
+                                  >
+                                    <Check className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => toggleHoursExpansion(habit.id)}
+                                    className="p-1.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm"
+                                    title="Cancelar y descartar cambios"
+                                    aria-label="Cancelar y descartar cambios"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              ) : (
                                 <button
                                   onClick={() => toggleHoursExpansion(habit.id)}
-                                  className="p-1.5 rounded-full bg-red-500 text-white hover:bg-red-600 transition-all shadow-sm"
-                                  title="Cancelar y descartar cambios"
-                                  aria-label="Cancelar y descartar cambios"
+                                  className="p-1.5 rounded-full bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm"
+                                  title="Expandir vista para editar horas"
+                                  aria-label="Expandir vista para editar horas"
                                 >
-                                  <X className="w-3.5 h-3.5" />
+                                  <Plus className="w-3.5 h-3.5" />
                                 </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => toggleHoursExpansion(habit.id)}
-                                className="p-1.5 rounded-full bg-indigo-500 text-white hover:bg-indigo-600 transition-all shadow-sm"
-                                title="Expandir vista para editar horas"
-                                aria-label="Expandir vista para editar horas"
-                              >
-                                <Plus className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                              )}
+                              {viewType === 'weekly' && (
+                                <div className="flex flex-col gap-0.5 ml-1">
+                                  <button
+                                    onClick={() => handleMoveHabit(habit.id, 'up')}
+                                    disabled={!canMoveHabit(habit.id, 'up', habitsByType.horas)}
+                                    className={`p-1 rounded transition-all ${
+                                      canMoveHabit(habit.id, 'up', habitsByType.horas)
+                                        ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                        : 'text-gray-300 cursor-not-allowed'
+                                    }`}
+                                    title="Mover arriba"
+                                    aria-label="Mover arriba"
+                                  >
+                                    <ChevronUp className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleMoveHabit(habit.id, 'down')}
+                                    disabled={!canMoveHabit(habit.id, 'down', habitsByType.horas)}
+                                    className={`p-1 rounded transition-all ${
+                                      canMoveHabit(habit.id, 'down', habitsByType.horas)
+                                        ? 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                                        : 'text-gray-300 cursor-not-allowed'
+                                    }`}
+                                    title="Mover abajo"
+                                    aria-label="Mover abajo"
+                                  >
+                                    <ChevronDown className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         {weekDates.map(date => renderHabitCell(habit, date))}
