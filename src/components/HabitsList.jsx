@@ -1,45 +1,213 @@
-import { CheckCircle2, Circle } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import { CheckCircle2, Circle, XCircle, Calendar, List } from 'lucide-react';
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, stats, today }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today }) {
+  const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
+  const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
+
   // Filtrar hábitos según el día de la semana seleccionado
   const getDayOfWeek = (dateString) => {
     const date = new Date(dateString);
     return date.getDay(); // 0 = Domingo, 1 = Lunes, ..., 6 = Sábado
   };
 
+  // Calcular los días de la semana (Lunes a Domingo)
+  const weekDates = useMemo(() => {
+    const date = new Date(selectedDate);
+    const dayOfWeek = date.getDay();
+    // Convertir: Domingo (0) -> retroceder 6 días, Lunes (1) -> retroceder 0 días, etc.
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(date);
+    monday.setDate(date.getDate() - daysToMonday);
+    
+    const week = [];
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(monday);
+      day.setDate(monday.getDate() + i);
+      week.push(day.toISOString().split('T')[0]);
+    }
+    return week;
+  }, [selectedDate]);
+
   const selectedDayOfWeek = getDayOfWeek(selectedDate);
-  const filteredHabits = habits.filter(habit => {
+  
+  // Para vista semanal: filtrar hábitos que aplican a cualquier día de la semana
+  // Para vista diaria: filtrar hábitos que aplican al día seleccionado
+  const filteredByDay = habits.filter(habit => {
     // Si el hábito no tiene daysOfWeek definido, mostrarlo siempre (compatibilidad con hábitos antiguos)
     if (!habit.daysOfWeek || habit.daysOfWeek.length === 0) {
       return true;
     }
-    return habit.daysOfWeek.includes(selectedDayOfWeek);
+    if (viewType === 'weekly') {
+      // En vista semanal, mostrar hábitos que aplican a cualquier día de la semana
+      const weekDays = weekDates.map(date => getDayOfWeek(date));
+      return habit.daysOfWeek.some(day => weekDays.includes(day));
+    } else {
+      // En vista diaria, mostrar solo hábitos del día seleccionado
+      return habit.daysOfWeek.includes(selectedDayOfWeek);
+    }
   });
 
-  if (habits.length === 0) {
-    return (
-      <div className="text-center py-12">
-        <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-        <p className="text-gray-500 mb-4">No tienes hábitos aún</p>
-        <p className="text-sm text-gray-400">Ve a la pestaña &quot;Hábitos&quot; para crear tu primer hábito</p>
-      </div>
-    );
-  }
+  // Filtrar por tipo de hábito
+  const filteredHabits = filteredByDay.filter(habit => {
+    if (filterType === 'todos') return true;
+    // Compatibilidad con tipos antiguos
+    if (filterType === 'todo' && (habit.type === 'todo' || habit.type === 'boolean')) return true;
+    if (filterType === 'todont' && habit.type === 'todont') return true;
+    if (filterType === 'horas' && (habit.type === 'horas' || habit.type === 'numeric')) return true;
+    return false;
+  });
 
-  if (filteredHabits.length === 0) {
+  // Agrupar hábitos por tipo para la vista semanal
+  const habitsByType = useMemo(() => {
+    const grouped = {
+      todo: [],
+      todont: [],
+      horas: []
+    };
+    
+    filteredHabits.forEach(habit => {
+      let habitType = habit.type;
+      // Compatibilidad con tipos antiguos
+      if (habit.type === 'boolean') habitType = 'todo';
+      if (habit.type === 'numeric') habitType = 'horas';
+      
+      if (habitType === 'todo') {
+        grouped.todo.push(habit);
+      } else if (habitType === 'todont') {
+        grouped.todont.push(habit);
+      } else if (habitType === 'horas') {
+        grouped.horas.push(habit);
+      }
+    });
+    
+    return grouped;
+  }, [filteredHabits]);
+
+  // Función auxiliar para obtener el estado de un hábito en una fecha
+  const getHabitStatus = (habit, dateString) => {
+    const dateValue = habit.history?.[dateString];
+    let habitType = habit.type;
+    
+    // Compatibilidad con tipos antiguos
+    if (habit.type === 'boolean') habitType = 'todo';
+    if (habit.type === 'numeric') habitType = 'horas';
+    
+    if (habitType === 'todo' || habitType === 'todont') {
+      return { isCompleted: dateValue === true, value: dateValue };
+    } else if (habitType === 'horas') {
+      return { isCompleted: Number(dateValue) >= habit.goal, value: Number(dateValue) || 0 };
+    }
+    return { isCompleted: false, value: null };
+  };
+
+  // Función para renderizar celda de hábito en la tabla semanal
+  const renderHabitCell = (habit, dateString) => {
+    const { isCompleted, value } = getHabitStatus(habit, dateString);
+    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+    
+    // Comparar fechas correctamente (ambas ya están en formato YYYY-MM-DD)
+    const isFuture = dateString > today;
+    
+    // Verificar si el hábito aplica a este día de la semana
+    const dayOfWeek = getDayOfWeek(dateString);
+    const habitAppliesToDay = !habit.daysOfWeek || habit.daysOfWeek.length === 0 || habit.daysOfWeek.includes(dayOfWeek);
+    const isDisabled = isFuture || !habitAppliesToDay;
+    
+    if (habitType === 'horas') {
+      return (
+        <td 
+          key={dateString}
+          className={`p-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
+        >
+          {habitAppliesToDay ? (
+            <div className="flex flex-col items-center gap-1">
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={value}
+                onChange={(e) => {
+                  const newValue = Math.max(0, Number(e.target.value));
+                  onUpdateProgress(habit, newValue, dateString);
+                }}
+                disabled={isDisabled}
+                className={`w-16 px-1 py-0.5 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-indigo-500 focus:border-transparent ${
+                  isDisabled ? 'bg-gray-100 cursor-not-allowed' : ''
+                }`}
+                placeholder="0"
+              />
+              <span className={`text-xs ${isCompleted ? 'text-blue-700 font-semibold' : 'text-gray-500'}`}>
+                / {habit.goal}h
+              </span>
+            </div>
+          ) : (
+            <span className="text-gray-300 text-xs">-</span>
+          )}
+        </td>
+      );
+    }
+    
     return (
-      <div className="text-center py-12">
-        <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-        <p className="text-gray-500 mb-4">No hay hábitos programados para este día</p>
-        <p className="text-sm text-gray-400">Ve a la pestaña &quot;Hábitos&quot; para agregar nuevos hábitos</p>
-      </div>
+      <td 
+        key={dateString}
+        className={`p-2 border-r border-gray-100 text-center ${isDisabled ? 'bg-gray-50 opacity-50' : ''}`}
+      >
+        {habitAppliesToDay ? (
+          <button
+            onClick={() => !isDisabled && onToggleHabit(habit, dateString)}
+            disabled={isDisabled}
+            className={`mx-auto ${isDisabled ? 'cursor-not-allowed opacity-50' : ''}`}
+          >
+            {isCompleted ? (
+              habitType === 'todont' ? (
+                <XCircle className="w-5 h-5 text-red-600" />
+              ) : (
+                <CheckCircle2 className="w-5 h-5 text-green-600" />
+              )
+            ) : (
+              <Circle className={`w-5 h-5 ${isDisabled ? 'text-gray-300' : 'text-gray-400 hover:text-indigo-600'}`} />
+            )}
+          </button>
+        ) : (
+          <span className="text-gray-300 text-xs">-</span>
+        )}
+      </td>
     );
-  }
+  };
 
   return (
     <div>
-      {/* Estadísticas discretas */}
-      {stats && (
+      {/* Selector de vista */}
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex gap-2">
+          <button
+            onClick={() => setViewType('weekly')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              viewType === 'weekly'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <Calendar className="w-4 h-4" />
+            Semanal
+          </button>
+          <button
+            onClick={() => setViewType('daily')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              viewType === 'daily'
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            <List className="w-4 h-4" />
+            Diaria
+          </button>
+        </div>
+      </div>
+
+      {/* Estadísticas discretas - solo en vista diaria */}
+      {viewType === 'daily' && stats && (
         <div className="mb-4 pb-4 border-b border-gray-200">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-0 text-sm">
             <div className="flex items-center gap-2">
@@ -64,21 +232,218 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
         </div>
       )}
       
-      <div className="space-y-3">
+      {/* Filtros por tipo - siempre visibles */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {[
+          { value: 'todos', label: 'Todos' },
+          { value: 'todo', label: 'To Do' },
+          { value: 'todont', label: "To Don't" },
+          { value: 'horas', label: 'Horas' }
+        ].map((filter) => (
+          <button
+            key={filter.value}
+            onClick={() => setFilterType(filter.value)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filterType === filter.value
+                ? 'bg-indigo-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            {filter.label}
+          </button>
+        ))}
+      </div>
+      
+      {/* Contenido de hábitos */}
+      {habits.length === 0 ? (
+        <div className="text-center py-12">
+          <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 mb-4">No tienes hábitos aún</p>
+          <p className="text-sm text-gray-400">Ve a la pestaña &quot;Hábitos&quot; para crear tu primer hábito</p>
+        </div>
+      ) : filteredHabits.length === 0 ? (
+        <div className="text-center py-12">
+          <Circle className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+          <p className="text-gray-500 mb-4">
+            {viewType === 'weekly' 
+              ? (filterType === 'todos' 
+                  ? 'No hay hábitos programados para esta semana'
+                  : `No hay hábitos de tipo "${filterType === 'todo' ? 'To Do' : filterType === 'todont' ? "To Don't" : 'Horas'}" para esta semana`)
+              : (filterType === 'todos' 
+                  ? 'No hay hábitos programados para este día'
+                  : `No hay hábitos de tipo "${filterType === 'todo' ? 'To Do' : filterType === 'todont' ? "To Don't" : 'Horas'}" para este día`)
+            }
+          </p>
+          <p className="text-sm text-gray-400">Cambia el filtro o ve a la pestaña &quot;Hábitos&quot; para agregar nuevos hábitos</p>
+        </div>
+      ) : viewType === 'weekly' ? (
+        /* Vista Semanal - Tabla */
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse bg-white rounded-lg shadow-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b-2 border-gray-200">
+                <th className="p-3 text-left text-sm font-semibold text-gray-700 sticky left-0 bg-gray-50 z-10 min-w-[200px]">
+                  Hábito
+                </th>
+                {weekDates.map((date) => {
+                  const dateObj = new Date(date);
+                  const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'short' });
+                  const dayNumber = dateObj.getDate();
+                  const isToday = date === today;
+                  return (
+                    <th 
+                      key={date}
+                      className={`p-3 text-center text-xs font-semibold text-gray-700 border-r border-gray-200 ${
+                        isToday ? 'bg-indigo-50 text-indigo-700' : ''
+                      }`}
+                    >
+                      <div className="flex flex-col">
+                        <span>{dayName}</span>
+                        <span className="text-lg font-bold">{dayNumber}</span>
+                      </div>
+                    </th>
+                  );
+                })}
+              </tr>
+            </thead>
+            <tbody>
+              {/* Grupo: To Do */}
+              {habitsByType.todo.length > 0 && (
+                <>
+                  <tr className="bg-green-50/30">
+                    <td colSpan={8} className="p-2 text-xs font-semibold text-green-700 uppercase">
+                      To Do
+                    </td>
+                  </tr>
+                  {habitsByType.todo.map((habit) => (
+                    <tr 
+                      key={habit.id}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                        {habit.name}
+                      </td>
+                      {weekDates.map(date => renderHabitCell(habit, date))}
+                    </tr>
+                  ))}
+                </>
+              )}
+              
+              {/* Grupo: To Don't */}
+              {habitsByType.todont.length > 0 && (
+                <>
+                  <tr className="bg-red-50/30">
+                    <td colSpan={8} className="p-2 text-xs font-semibold text-red-700 uppercase">
+                      To Don&apos;t
+                    </td>
+                  </tr>
+                  {habitsByType.todont.map((habit) => (
+                    <tr 
+                      key={habit.id}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                        {habit.name}
+                      </td>
+                      {weekDates.map(date => renderHabitCell(habit, date))}
+                    </tr>
+                  ))}
+                </>
+              )}
+              
+              {/* Grupo: Horas */}
+              {habitsByType.horas.length > 0 && (
+                <>
+                  <tr className="bg-blue-50/30">
+                    <td colSpan={8} className="p-2 text-xs font-semibold text-blue-700 uppercase">
+                      Horas
+                    </td>
+                  </tr>
+                  {habitsByType.horas.map((habit) => (
+                    <tr 
+                      key={habit.id}
+                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                    >
+                      <td className="p-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
+                        {habit.name}
+                      </td>
+                      {weekDates.map(date => renderHabitCell(habit, date))}
+                    </tr>
+                  ))}
+                </>
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        /* Vista Diaria - Lista */
+        <div className="space-y-3">
         {filteredHabits.map((habit) => {
           const dateValue = habit.history?.[selectedDate];
-          const isCompleted = habit.type === 'boolean' 
-            ? dateValue === true 
-            : Number(dateValue) >= habit.goal;
+          let isCompleted;
+          let habitType = habit.type;
+          
+          // Compatibilidad con tipos antiguos
+          if (habit.type === 'boolean') habitType = 'todo';
+          if (habit.type === 'numeric') habitType = 'horas';
+          
+          if (habitType === 'todo' || habitType === 'todont') {
+            isCompleted = dateValue === true;
+          } else if (habitType === 'horas') {
+            isCompleted = Number(dateValue) >= habit.goal;
+          } else {
+            isCompleted = false;
+          }
+
+          // Colores según el tipo cuando está completado
+          const getCompletedStyles = () => {
+            if (!isCompleted) return 'bg-white border-gray-200 hover:border-indigo-300';
+            switch (habitType) {
+              case 'todo':
+                return 'bg-green-50 border-green-300';
+              case 'todont':
+                return 'bg-red-50 border-red-300';
+              case 'horas':
+                return 'bg-blue-50 border-blue-300';
+              default:
+                return 'bg-green-50 border-green-200';
+            }
+          };
+
+          const getCompletedTextColor = () => {
+            if (!isCompleted) return 'text-gray-800';
+            switch (habitType) {
+              case 'todo':
+                return 'text-green-800';
+              case 'todont':
+                return 'text-red-800';
+              case 'horas':
+                return 'text-blue-800';
+              default:
+                return 'text-green-800';
+            }
+          };
+
+          const getIcon = () => {
+            if (!isCompleted) {
+              return <Circle className="w-6 h-6 text-gray-400 hover:text-indigo-600" />;
+            }
+            switch (habitType) {
+              case 'todo':
+                return <CheckCircle2 className="w-6 h-6 text-green-600" />;
+              case 'todont':
+                return <XCircle className="w-6 h-6 text-red-600" />;
+              case 'horas':
+                return <CheckCircle2 className="w-6 h-6 text-blue-600" />;
+              default:
+                return <CheckCircle2 className="w-6 h-6 text-green-600" />;
+            }
+          };
 
           return (
             <div
               key={habit.id}
-              className={`border rounded-lg p-4 transition-all ${
-                isCompleted
-                  ? 'bg-green-50 border-green-200'
-                  : 'bg-white border-gray-200 hover:border-indigo-300'
-              }`}
+              className={`border rounded-lg p-4 transition-all ${getCompletedStyles()}`}
             >
               <div className="flex items-center justify-between">
                 <div className="flex-1">
@@ -87,20 +452,28 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       onClick={() => onToggleHabit(habit, selectedDate)}
                       className="flex-shrink-0"
                     >
-                      {isCompleted ? (
-                        <CheckCircle2 className="w-6 h-6 text-green-600" />
-                      ) : (
-                        <Circle className="w-6 h-6 text-gray-400 hover:text-indigo-600" />
-                      )}
+                      {getIcon()}
                     </button>
                     <div className="flex-1">
-                      <h3 className={`font-medium ${isCompleted ? 'text-green-800 line-through' : 'text-gray-800'}`}>
+                      <h3 className={`font-medium ${isCompleted ? `${getCompletedTextColor()} line-through` : 'text-gray-800'}`}>
                         {habit.name}
                       </h3>
-                      {habit.type === 'numeric' && (
+                      {habitType === 'horas' && (
                         <div className="flex items-center gap-2 mt-1">
-                          <span className="text-sm text-gray-600">
-                            {Number(dateValue) || 0} / {habit.goal}
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            value={Number(dateValue) || 0}
+                            onChange={(e) => {
+                              const newValue = Math.max(0, Number(e.target.value));
+                              onUpdateProgress(habit, newValue, selectedDate);
+                            }}
+                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                            placeholder="0"
+                          />
+                          <span className={`text-sm ${isCompleted ? 'text-blue-700' : 'text-gray-600'}`}>
+                            / {habit.goal} h
                           </span>
                           <div className="flex gap-1">
                             <button
@@ -125,7 +498,8 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
             </div>
           );
         })}
-      </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -15,9 +15,11 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
   const startDate = new Date(todayDate);
   startDate.setDate(startDate.getDate() - 29); // Últimos 30 días
   
-  // Ajustar al inicio de la semana
+  // Ajustar al inicio de la semana (Lunes)
   const dayOfWeek = startDate.getDay();
-  startDate.setDate(startDate.getDate() - dayOfWeek);
+  // Convertir: Domingo (0) -> retroceder 6 días, Lunes (1) -> retroceder 0 días, etc.
+  const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+  startDate.setDate(startDate.getDate() - daysToMonday);
   
   for (let i = 0; i < 35; i++) {
     const currentDate = new Date(startDate);
@@ -40,9 +42,13 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
     // Contar hábitos completados para este día
     const completedCount = habitsForDay.filter(habit => {
       const val = habit.history?.[dateString];
-      return habit.type === 'boolean' 
-        ? val === true 
-        : Number(val) >= habit.goal;
+      const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+      if (habitType === 'todo' || habitType === 'todont') {
+        return val === true;
+      } else if (habitType === 'horas') {
+        return Number(val) >= habit.goal;
+      }
+      return false;
     }).length;
     
     const totalHabits = habitsForDay.length;
@@ -144,8 +150,8 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
 
       <h3 className="text-lg font-semibold text-gray-800 mb-4">Historial de los últimos 30 días</h3>
       <div className="grid grid-cols-7 gap-2">
-        {/* Headers de días de la semana */}
-        {['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'].map(day => (
+        {/* Headers de días de la semana (empezando en Lunes) */}
+        {['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'].map(day => (
           <div key={day} className="text-center text-sm font-semibold text-gray-600 py-2">
             {day}
           </div>

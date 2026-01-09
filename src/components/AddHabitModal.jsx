@@ -25,21 +25,30 @@ export default function AddHabitModal({ isOpen, onClose, newHabit, onHabitChange
             </label>
             <select
               value={newHabit.type}
-              onChange={(e) => onHabitChange({ ...newHabit, type: e.target.value, goal: e.target.value === 'boolean' ? 1 : newHabit.goal })}
+              onChange={(e) => {
+                const newType = e.target.value;
+                onHabitChange({ 
+                  ...newHabit, 
+                  type: newType, 
+                  goal: newType === 'horas' ? newHabit.goal : 1 
+                });
+              }}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
             >
-              <option value="boolean">Sí/No</option>
-              <option value="numeric">Numérico</option>
+              <option value="todo">To Do</option>
+              <option value="todont">To Don&apos;t</option>
+              <option value="horas">Horas</option>
             </select>
           </div>
-          {newHabit.type === 'numeric' && (
+          {newHabit.type === 'horas' && (
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Meta diaria
+                Meta diaria (horas)
               </label>
               <input
                 type="number"
-                min="1"
+                min="0.5"
+                step="0.5"
                 value={newHabit.goal}
                 onChange={(e) => onHabitChange({ ...newHabit, goal: Number(e.target.value) })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
@@ -53,13 +62,13 @@ export default function AddHabitModal({ isOpen, onClose, newHabit, onHabitChange
             </label>
             <div className="grid grid-cols-7 gap-2">
               {[
-                { value: 0, label: 'D' },
                 { value: 1, label: 'L' },
                 { value: 2, label: 'M' },
                 { value: 3, label: 'X' },
                 { value: 4, label: 'J' },
                 { value: 5, label: 'V' },
-                { value: 6, label: 'S' }
+                { value: 6, label: 'S' },
+                { value: 0, label: 'D' }
               ].map((day) => (
                 <label
                   key={day.value}

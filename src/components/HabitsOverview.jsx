@@ -1,7 +1,7 @@
 import { Plus, Target, Hash, Trash2 } from 'lucide-react';
 
 export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit }) {
-  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+  const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; // Mantener orden para compatibilidad con índices
 
   const formatDaysOfWeek = (daysOfWeek) => {
     if (!daysOfWeek || daysOfWeek.length === 0) {
@@ -54,24 +54,35 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit }) {
             <div className="flex items-start justify-between">
               <div className="flex-1">
                 <div className="flex items-center gap-2 mb-2">
-                  {habit.type === 'boolean' ? (
-                    <Target className="w-5 h-5 text-indigo-600" />
-                  ) : (
-                    <Hash className="w-5 h-5 text-purple-600" />
-                  )}
+                  {(() => {
+                    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+                    if (habitType === 'todo') {
+                      return <Target className="w-5 h-5 text-green-600" />;
+                    } else if (habitType === 'todont') {
+                      return <Target className="w-5 h-5 text-red-600" />;
+                    } else {
+                      return <Hash className="w-5 h-5 text-blue-600" />;
+                    }
+                  })()}
                   <h3 className="font-medium text-gray-800">{habit.name}</h3>
                 </div>
                 
                 <div className="space-y-1 text-sm text-gray-600">
                   <div className="flex items-center gap-2">
                     <span className="font-medium">Tipo:</span>
-                    <span>{habit.type === 'boolean' ? 'Sí/No' : 'Numérico'}</span>
+                    <span>{(() => {
+                      const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+                      if (habitType === 'todo') return 'To Do';
+                      if (habitType === 'todont') return "To Don't";
+                      if (habitType === 'horas') return 'Horas';
+                      return habit.type;
+                    })()}</span>
                   </div>
                   
-                  {habit.type === 'numeric' && (
+                  {(habit.type === 'horas' || habit.type === 'numeric') && (
                     <div className="flex items-center gap-2">
                       <span className="font-medium">Meta diaria:</span>
-                      <span>{habit.goal}</span>
+                      <span>{habit.goal} {habit.type === 'horas' ? 'horas' : ''}</span>
                     </div>
                   )}
                   

@@ -22,9 +22,9 @@ export default function App() {
   
   const [newHabit, setNewHabit] = useState({ 
     name: '', 
-    type: 'boolean', 
+    type: 'todo', 
     goal: 1, 
-    daysOfWeek: [0, 1, 2, 3, 4, 5, 6] // Por defecto todos los días
+    daysOfWeek: [1, 2, 3, 4, 5, 6, 0] // Por defecto todos los días (Lunes a Domingo)
   });
   const today = new Date().toISOString().split('T')[0];
 
@@ -111,10 +111,12 @@ export default function App() {
   const stats = useMemo(() => {
     if (habits.length === 0) return null;
     
-    // Obtener el día de la semana del selectedDate
+    // Obtener el día de la semana del selectedDate (Lunes = 1, Domingo = 0)
     const getDayOfWeek = (dateString) => {
       const date = new Date(dateString);
-      return date.getDay();
+      const day = date.getDay();
+      // Convertir: Domingo (0) -> 0, Lunes (1) -> 1, ..., Sábado (6) -> 6
+      return day;
     };
     
     const selectedDayOfWeek = getDayOfWeek(selectedDate);
@@ -131,6 +133,12 @@ export default function App() {
     
     const completedForDate = habitsForDate.filter(h => {
       const val = h.history?.[selectedDate];
+      if (h.type === 'todo' || h.type === 'todont') {
+        return val === true;
+      } else if (h.type === 'horas') {
+        return Number(val) >= h.goal;
+      }
+      // Compatibilidad con tipos antiguos
       return h.type === 'boolean' ? val === true : (Number(val) >= h.goal);
     }).length;
     
@@ -155,11 +163,11 @@ export default function App() {
         ...newHabit,
         userId: user.uid, // Agregar userId al hábito
         goal: Number(newHabit.goal),
-        daysOfWeek: newHabit.daysOfWeek || [0, 1, 2, 3, 4, 5, 6],
+        daysOfWeek: newHabit.daysOfWeek || [1, 2, 3, 4, 5, 6, 0],
         createdAt: new Date().toISOString(),
         history: {}
       });
-      setNewHabit({ name: '', type: 'boolean', goal: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
+      setNewHabit({ name: '', type: 'todo', goal: 1, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
       setIsModalOpen(false);
     } catch (err) { 
       setError("Error al guardar."); 
@@ -168,7 +176,15 @@ export default function App() {
 
   const updateProgress = async (habit, newValue, date = selectedDate) => {
     if (!user) return;
-    const cleanValue = habit.type === 'boolean' ? newValue : Math.max(0, Number(newValue));
+    let cleanValue;
+    if (habit.type === 'todo' || habit.type === 'todont') {
+      cleanValue = newValue;
+    } else if (habit.type === 'horas') {
+      cleanValue = Math.max(0, Number(newValue));
+    } else {
+      // Compatibilidad con tipos antiguos
+      cleanValue = habit.type === 'boolean' ? newValue : Math.max(0, Number(newValue));
+    }
     try {
       await updateDoc(doc(db, 'habits', habit.id), { [`history.${date}`]: cleanValue });
     } catch (err) { 
@@ -186,15 +202,24 @@ export default function App() {
 
   const toggleHabit = (habit, date = selectedDate) => {
     const currentValue = habit.history?.[date];
-    const newValue = habit.type === 'boolean' 
-      ? !currentValue 
-      : (Number(currentValue) || 0) + 1;
+    let newValue;
+    if (habit.type === 'todo' || habit.type === 'todont') {
+      newValue = !currentValue;
+    } else if (habit.type === 'horas') {
+      newValue = (Number(currentValue) || 0) + 0.5;
+    } else {
+      // Compatibilidad con tipos antiguos
+      newValue = habit.type === 'boolean' 
+        ? !currentValue 
+        : (Number(currentValue) || 0) + 1;
+    }
     updateProgress(habit, newValue, date);
   };
 
   const decrementHabit = (habit, date = selectedDate) => {
     const currentValue = Number(habit.history?.[date] || 0);
-    updateProgress(habit, Math.max(0, currentValue - 1), date);
+    const decrement = habit.type === 'horas' ? 0.5 : 1;
+    updateProgress(habit, Math.max(0, currentValue - decrement), date);
   };
 
   const changeDate = (days) => {
@@ -404,6 +429,7 @@ export default function App() {
                 selectedDate={selectedDate}
                 onToggleHabit={toggleHabit}
                 onDecrementHabit={decrementHabit}
+                onUpdateProgress={updateProgress}
                 stats={stats}
                 today={today}
               />
@@ -441,7 +467,7 @@ export default function App() {
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
-          setNewHabit({ name: '', type: 'boolean', goal: 1, daysOfWeek: [0, 1, 2, 3, 4, 5, 6] });
+          setNewHabit({ name: '', type: 'todo', goal: 1, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
         }}
         newHabit={newHabit}
         onHabitChange={setNewHabit}

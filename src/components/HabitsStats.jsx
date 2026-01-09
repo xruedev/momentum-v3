@@ -14,9 +14,15 @@ export default function HabitsStats({ habits }) {
     <div className="space-y-4">
       {habits.map((habit) => {
         const historyDays = Object.keys(habit.history || {}).length;
-        const completedDays = Object.values(habit.history || {}).filter(val => 
-          habit.type === 'boolean' ? val === true : Number(val) >= habit.goal
-        ).length;
+        const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+        const completedDays = Object.values(habit.history || {}).filter(val => {
+          if (habitType === 'todo' || habitType === 'todont') {
+            return val === true;
+          } else if (habitType === 'horas') {
+            return Number(val) >= habit.goal;
+          }
+          return false;
+        }).length;
 
         return (
           <div key={habit.id} className="border border-gray-200 rounded-lg p-4 bg-white">
