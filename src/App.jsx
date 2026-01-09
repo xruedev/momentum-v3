@@ -24,9 +24,26 @@ export default function App() {
     name: '', 
     type: 'todo', 
     goal: 1, 
+    goalWorkdays: 8,
+    goalWeekends: 2,
     daysOfWeek: [1, 2, 3, 4, 5, 6, 0] // Por defecto todos los días (Lunes a Domingo)
   });
   const today = new Date().toISOString().split('T')[0];
+
+  // Función helper para obtener la meta según el día de la semana
+  const getGoalForDate = (habit, dateString) => {
+    // Para hábitos tipo "todo" y "todont", usar goal normal
+    if (habit.type !== 'horas') return habit.goal;
+    
+    const date = new Date(dateString);
+    const dayOfWeek = date.getDay(); // 0 = Domingo, 6 = Sábado
+    
+    // Días laborables: Lunes (1) a Viernes (5)
+    const isWorkday = dayOfWeek >= 1 && dayOfWeek <= 5;
+    
+    // Retornar la meta correspondiente según el tipo de día
+    return isWorkday ? habit.goalWorkdays : habit.goalWeekends;
+  };
 
   // Logging inicial para diagnóstico
   useEffect(() => {
@@ -136,7 +153,8 @@ export default function App() {
       if (h.type === 'todo' || h.type === 'todont') {
         return val === true;
       } else if (h.type === 'horas') {
-        return Number(val) >= h.goal;
+        const goal = getGoalForDate(h, selectedDate);
+        return Number(val) >= goal;
       }
       // Compatibilidad con tipos antiguos
       return h.type === 'boolean' ? val === true : (Number(val) >= h.goal);
@@ -159,15 +177,25 @@ export default function App() {
     }
     try {
       const habitId = crypto.randomUUID();
-      await setDoc(doc(db, 'habits', habitId), {
+      const habitData = {
         ...newHabit,
-        userId: user.uid, // Agregar userId al hábito
-        goal: Number(newHabit.goal),
+        userId: user.uid,
         daysOfWeek: newHabit.daysOfWeek || [1, 2, 3, 4, 5, 6, 0],
         createdAt: new Date().toISOString(),
         history: {}
-      });
-      setNewHabit({ name: '', type: 'todo', goal: 1, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
+      };
+      
+      // Para hábitos tipo "horas", guardar goalWorkdays y goalWeekends (no goal)
+      if (newHabit.type === 'horas') {
+        habitData.goalWorkdays = Number(newHabit.goalWorkdays);
+        habitData.goalWeekends = Number(newHabit.goalWeekends);
+      } else {
+        // Para otros tipos, guardar goal normal
+        habitData.goal = Number(newHabit.goal);
+      }
+      
+      await setDoc(doc(db, 'habits', habitId), habitData);
+      setNewHabit({ name: '', type: 'todo', goal: 1, goalWorkdays: 8, goalWeekends: 2, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
       setIsModalOpen(false);
     } catch (err) { 
       setError("Error al guardar."); 
@@ -432,6 +460,7 @@ export default function App() {
                 onUpdateProgress={updateProgress}
                 stats={stats}
                 today={today}
+                getGoalForDate={getGoalForDate}
               />
             )}
 
@@ -453,11 +482,12 @@ export default function App() {
                 onNextDay={() => changeDate(1)}
                 onTodayClick={() => setSelectedDate(today)}
                 formatDate={formatDate}
+                getGoalForDate={getGoalForDate}
               />
             )}
 
             {activeTab === 'stats' && (
-              <HabitsStats habits={habits} />
+              <HabitsStats habits={habits} getGoalForDate={getGoalForDate} />
             )}
           </div>
         </div>
@@ -467,7 +497,7 @@ export default function App() {
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);
-          setNewHabit({ name: '', type: 'todo', goal: 1, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
+          setNewHabit({ name: '', type: 'todo', goal: 1, goalWorkdays: 8, goalWeekends: 2, daysOfWeek: [1, 2, 3, 4, 5, 6, 0] });
         }}
         newHabit={newHabit}
         onHabitChange={setNewHabit}

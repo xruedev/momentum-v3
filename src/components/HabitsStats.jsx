@@ -1,6 +1,6 @@
 import { TrendingUp } from 'lucide-react';
 
-export default function HabitsStats({ habits }) {
+export default function HabitsStats({ habits, getGoalForDate }) {
   if (habits.length === 0) {
     return (
       <div className="text-center py-12">
@@ -15,11 +15,12 @@ export default function HabitsStats({ habits }) {
       {habits.map((habit) => {
         const historyDays = Object.keys(habit.history || {}).length;
         const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
-        const completedDays = Object.values(habit.history || {}).filter(val => {
+        const completedDays = Object.entries(habit.history || {}).filter(([dateString, val]) => {
           if (habitType === 'todo' || habitType === 'todont') {
             return val === true;
           } else if (habitType === 'horas') {
-            return Number(val) >= habit.goal;
+            const goal = getGoalForDate(habit, dateString);
+            return Number(val) >= goal;
           }
           return false;
         }).length;

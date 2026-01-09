@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { CheckCircle2, Circle, XCircle, Calendar, List, Plus, Minus, Check, X } from 'lucide-react';
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, stats, today, getGoalForDate }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
   const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
   const [expandedHoursHabits, setExpandedHoursHabits] = useState(new Set()); // Set de IDs de hábitos tipo horas expandidos
@@ -99,7 +99,8 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     if (habitType === 'todo' || habitType === 'todont') {
       return { isCompleted: dateValue === true, value: dateValue };
     } else if (habitType === 'horas') {
-      return { isCompleted: Number(dateValue) >= habit.goal, value: Number(dateValue) || 0 };
+      const goal = getGoalForDate(habit, dateString);
+      return { isCompleted: Number(dateValue) >= goal, value: Number(dateValue) || 0, goal };
     }
     return { isCompleted: false, value: null };
   };
@@ -189,9 +190,143 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
     });
   };
 
+  // Función para calcular agregados semanales de un hábito
+  const calculateWeeklyAggregates = (habit) => {
+    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+    const habitChanges = unsavedChanges[habit.id] || {};
+    
+    if (habitType === 'todo' || habitType === 'todont') {
+      // Para hábitos todo/todont: contar días completados / días totales aplicables
+      let completedDays = 0;
+      let totalApplicableDays = 0;
+      
+      weekDates.forEach(dateString => {
+        const dayOfWeek = getDayOfWeek(dateString);
+        const habitAppliesToDay = !habit.daysOfWeek || habit.daysOfWeek.length === 0 || habit.daysOfWeek.includes(dayOfWeek);
+        
+        // Incluir también fechas futuras en los cálculos
+        if (habitAppliesToDay) {
+          totalApplicableDays++;
+          // Considerar cambios sin guardar si existen
+          const val = habitChanges[dateString] !== undefined 
+            ? habitChanges[dateString] 
+            : habit.history?.[dateString];
+          if (val === true) {
+            completedDays++;
+          }
+        }
+      });
+      
+      return { type: 'todo', completed: completedDays, total: totalApplicableDays };
+    } else if (habitType === 'horas') {
+      // Para hábitos de horas: sumar horas totales / horas objetivo semanales
+      let totalHours = 0;
+      let weeklyGoal = 0;
+      
+      weekDates.forEach(dateString => {
+        const dayOfWeek = getDayOfWeek(dateString);
+        const habitAppliesToDay = !habit.daysOfWeek || habit.daysOfWeek.length === 0 || habit.daysOfWeek.includes(dayOfWeek);
+        
+        // Incluir también fechas futuras en los cálculos
+        if (habitAppliesToDay) {
+          const goal = getGoalForDate(habit, dateString);
+          weeklyGoal += goal;
+          // Considerar cambios sin guardar si existen
+          const val = habitChanges[dateString] !== undefined 
+            ? Number(habitChanges[dateString]) 
+            : Number(habit.history?.[dateString] || 0);
+          totalHours += val;
+        }
+      });
+      
+      return { type: 'horas', total: totalHours, goal: weeklyGoal };
+    }
+    
+    return null;
+  };
+
+  // Función para renderizar celda de agregados semanales
+  const renderWeeklyAggregates = (habit) => {
+    const aggregates = calculateWeeklyAggregates(habit);
+    if (!aggregates) return null;
+    
+    const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
+    const hasUnsavedChanges = unsavedChanges[habit.id] && Object.keys(unsavedChanges[habit.id]).length > 0;
+    
+    return (
+      <td 
+        key="aggregates"
+        className="p-3 text-center border-l-4 border-indigo-300 bg-indigo-50/30 font-medium min-w-[100px]"
+      >
+        {aggregates.type === 'todo' ? (
+          <div className="flex items-center justify-center gap-1">
+            <span className={`text-sm font-semibold ${
+              aggregates.completed === aggregates.total && aggregates.total > 0
+                ? 'text-green-600' 
+                : aggregates.completed > 0
+                  ? 'text-indigo-600'
+                  : 'text-gray-600'
+            }`}>
+              {aggregates.completed}/{aggregates.total}
+            </span>
+            <span className="text-xs text-gray-500">días</span>
+            {hasUnsavedChanges && (
+              <span className="text-xs text-orange-600 font-medium">*</span>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center justify-center gap-1">
+            <span className={`text-sm font-semibold ${
+              aggregates.total >= aggregates.goal && aggregates.goal > 0
+                ? 'text-green-600' 
+                : aggregates.total > 0
+                  ? 'text-indigo-600'
+                  : 'text-gray-600'
+            }`}>
+              {aggregates.total.toFixed(1)}h
+            </span>
+            <span className="text-xs text-gray-500">
+              / {aggregates.goal.toFixed(1)}h
+            </span>
+            {hasUnsavedChanges && (
+              <span className="text-xs text-orange-600 font-medium">*</span>
+            )}
+          </div>
+        )}
+      </td>
+    );
+  };
+
+  // Función para verificar si todos los hábitos están completados en un día
+  const areAllHabitsCompletedForDay = (dateString) => {
+    const dayOfWeek = getDayOfWeek(dateString);
+    const isFuture = dateString > today;
+    
+    // Si es una fecha futura, no considerar completado
+    if (isFuture) return false;
+    
+    // Obtener hábitos que aplican a este día
+    const habitsForDay = filteredHabits.filter(habit => {
+      if (!habit.daysOfWeek || habit.daysOfWeek.length === 0) {
+        return true; // Compatibilidad con hábitos antiguos
+      }
+      return habit.daysOfWeek.includes(dayOfWeek);
+    });
+    
+    // Si no hay hábitos para este día, no considerar completado
+    if (habitsForDay.length === 0) return false;
+    
+    // Verificar que todos los hábitos estén completados
+    return habitsForDay.every(habit => {
+      const habitStatus = getHabitStatus(habit, dateString);
+      return habitStatus.isCompleted;
+    });
+  };
+
   // Función para renderizar celda de hábito en la tabla semanal
   const renderHabitCell = (habit, dateString) => {
-    const { isCompleted, value } = getHabitStatus(habit, dateString);
+    const habitStatus = getHabitStatus(habit, dateString);
+    const { isCompleted, value, goal } = habitStatus;
     const habitType = habit.type === 'boolean' ? 'todo' : (habit.type === 'numeric' ? 'horas' : habit.type);
     
     // Comparar fechas correctamente (ambas ya están en formato YYYY-MM-DD)
@@ -243,7 +378,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                   {value || 0}h
                 </span>
                 <span className={`text-xs ${isCompleted ? 'text-blue-700 font-semibold' : 'text-gray-500'}`}>
-                  / {habit.goal}h
+                  / {goal}h
                 </span>
               </div>
             )
@@ -396,11 +531,16 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                   const dayName = dateObj.toLocaleDateString('es-ES', { weekday: 'short' });
                   const dayNumber = dateObj.getDate();
                   const isToday = date === today;
+                  const allCompleted = areAllHabitsCompletedForDay(date);
                   return (
                     <th 
                       key={date}
-                      className={`p-3 text-center text-xs font-semibold text-gray-700 border-r border-gray-200 ${
-                        isToday ? 'bg-indigo-50 text-indigo-700' : ''
+                      className={`p-3 text-center text-xs font-semibold border-r border-gray-200 ${
+                        allCompleted
+                          ? 'bg-green-100 text-green-700'
+                          : isToday
+                            ? 'bg-indigo-50 text-indigo-700'
+                            : 'text-gray-700'
                       }`}
                     >
                       <div className="flex flex-col">
@@ -410,6 +550,9 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     </th>
                   );
                 })}
+                <th className="p-3 text-center text-sm font-semibold text-gray-700 border-l-4 border-indigo-300 bg-indigo-50/50 min-w-[100px]">
+                  Totales
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -417,7 +560,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.todo.length > 0 && (
                 <>
                   <tr className="bg-green-50/30">
-                    <td colSpan={8} className="p-2 text-xs font-semibold text-green-700 uppercase">
+                    <td colSpan={9} className="p-2 text-xs font-semibold text-green-700 uppercase">
                       To Do
                     </td>
                   </tr>
@@ -430,6 +573,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                         {habit.name}
                       </td>
                       {weekDates.map(date => renderHabitCell(habit, date))}
+                      {renderWeeklyAggregates(habit)}
                     </tr>
                   ))}
                 </>
@@ -439,7 +583,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.todont.length > 0 && (
                 <>
                   <tr className="bg-red-50/30">
-                    <td colSpan={8} className="p-2 text-xs font-semibold text-red-700 uppercase">
+                    <td colSpan={9} className="p-2 text-xs font-semibold text-red-700 uppercase">
                       To Don&apos;t
                     </td>
                   </tr>
@@ -452,6 +596,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                         {habit.name}
                       </td>
                       {weekDates.map(date => renderHabitCell(habit, date))}
+                      {renderWeeklyAggregates(habit)}
                     </tr>
                   ))}
                 </>
@@ -461,7 +606,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
               {habitsByType.horas.length > 0 && (
                 <>
                   <tr className="bg-blue-50/30">
-                    <td colSpan={8} className="p-2 text-xs font-semibold text-blue-700 uppercase">
+                    <td colSpan={9} className="p-2 text-xs font-semibold text-blue-700 uppercase">
                       Horas
                     </td>
                   </tr>
@@ -513,6 +658,7 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                           </div>
                         </td>
                         {weekDates.map(date => renderHabitCell(habit, date))}
+                        {renderWeeklyAggregates(habit)}
                       </tr>
                     );
                   })}
@@ -536,7 +682,8 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
           if (habitType === 'todo' || habitType === 'todont') {
             isCompleted = dateValue === true;
           } else if (habitType === 'horas') {
-            isCompleted = Number(dateValue) >= habit.goal;
+            const goal = getGoalForDate(habit, selectedDate);
+            isCompleted = Number(dateValue) >= goal;
           } else {
             isCompleted = false;
           }
@@ -604,23 +751,25 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       <h3 className={`font-medium ${isCompleted ? `${getCompletedTextColor()} line-through` : 'text-gray-800'}`}>
                         {habit.name}
                       </h3>
-                      {habitType === 'horas' && (
-                        <div className="flex items-center gap-2 mt-1">
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            value={Number(dateValue) || 0}
-                            onChange={(e) => {
-                              const newValue = Math.max(0, Number(e.target.value));
-                              onUpdateProgress(habit, newValue, selectedDate);
-                            }}
-                            className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                            placeholder="0"
-                          />
-                          <span className={`text-sm ${isCompleted ? 'text-blue-700' : 'text-gray-600'}`}>
-                            / {habit.goal} h
-                          </span>
+                      {habitType === 'horas' && (() => {
+                        const goal = getGoalForDate(habit, selectedDate);
+                        return (
+                          <div className="flex items-center gap-2 mt-1">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.5"
+                              value={Number(dateValue) || 0}
+                              onChange={(e) => {
+                                const newValue = Math.max(0, Number(e.target.value));
+                                onUpdateProgress(habit, newValue, selectedDate);
+                              }}
+                              className="w-20 px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                              placeholder="0"
+                            />
+                            <span className={`text-sm ${isCompleted ? 'text-blue-700' : 'text-gray-600'}`}>
+                              / {goal} h
+                            </span>
                           <div className="flex gap-1">
                             <button
                               onClick={() => onDecrementHabit(habit, selectedDate)}
@@ -636,7 +785,8 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                             </button>
                           </div>
                         </div>
-                      )}
+                        );
+                      })()}
                     </div>
                   </div>
                 </div>

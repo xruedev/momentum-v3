@@ -1,6 +1,6 @@
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 
-export default function HabitsCalendar({ habits, selectedDate, today, onDateSelect, onPreviousDay, onNextDay, onTodayClick, formatDate }) {
+export default function HabitsCalendar({ habits, selectedDate, today, onDateSelect, onPreviousDay, onNextDay, onTodayClick, formatDate, getGoalForDate }) {
   if (habits.length === 0) {
     return (
       <div className="text-center py-12">
@@ -46,7 +46,8 @@ export default function HabitsCalendar({ habits, selectedDate, today, onDateSele
       if (habitType === 'todo' || habitType === 'todont') {
         return val === true;
       } else if (habitType === 'horas') {
-        return Number(val) >= habit.goal;
+        const goal = getGoalForDate(habit, dateString);
+        return Number(val) >= goal;
       }
       return false;
     }).length;

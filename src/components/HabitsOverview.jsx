@@ -80,9 +80,15 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit }) {
                   </div>
                   
                   {(habit.type === 'horas' || habit.type === 'numeric') && (
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">Meta diaria:</span>
-                      <span>{habit.goal} {habit.type === 'horas' ? 'horas' : ''}</span>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Meta días laborables (L-V):</span>
+                        <span>{habit.goalWorkdays || habit.goal || 0} horas</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">Meta días no laborables (S-D):</span>
+                        <span>{habit.goalWeekends || habit.goal || 0} horas</span>
+                      </div>
                     </div>
                   )}
                   

@@ -41,19 +41,35 @@ export default function AddHabitModal({ isOpen, onClose, newHabit, onHabitChange
             </select>
           </div>
           {newHabit.type === 'horas' && (
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Meta diaria (horas)
-              </label>
-              <input
-                type="number"
-                min="0.5"
-                step="0.5"
-                value={newHabit.goal}
-                onChange={(e) => onHabitChange({ ...newHabit, goal: Number(e.target.value) })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-                required
-              />
+            <div className="mb-4 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Meta días laborables (L-V) (horas)
+                </label>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={newHabit.goalWorkdays || 8}
+                  onChange={(e) => onHabitChange({ ...newHabit, goalWorkdays: Number(e.target.value) })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Meta días no laborables (S-D) (horas)
+                </label>
+                <input
+                  type="number"
+                  min="0.5"
+                  step="0.5"
+                  value={newHabit.goalWeekends || 2}
+                  onChange={(e) => onHabitChange({ ...newHabit, goalWeekends: Number(e.target.value) })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                  required
+                />
+              </div>
             </div>
           )}
           <div className="mb-4">
