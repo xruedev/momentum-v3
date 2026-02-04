@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { signInWithPopup, signInAnonymously } from 'firebase/auth';
-import { auth, googleProvider } from '../firebase';
+import { auth, googleProvider } from '../../firebase';
 import { Loader2, UserCircle, Target } from 'lucide-react';
 
 export default function Login({ onLoginSuccess }) {
@@ -23,6 +23,8 @@ export default function Login({ onLoginSuccess }) {
         errorMessage = 'El navegador bloqueó la ventana emergente. Permite ventanas emergentes para este sitio.';
       } else if (err.code === 'auth/configuration-not-found') {
         errorMessage = 'La autenticación con Google no está habilitada en Firebase. Ve a Firebase Console > Authentication > Sign-in method y habilita "Google".';
+      } else if (err.code === 'auth/unauthorized-domain') {
+        errorMessage = 'Este dominio no está autorizado. El administrador debe agregar este dominio en Firebase Console > Authentication > Settings > Authorized domains.';
       }
       
       setError(errorMessage);
