@@ -9,6 +9,7 @@ import HabitsCalendar from './components/HabitsCalendar';
 import HabitsStats from './components/HabitsStats';
 import AddHabitModal from './components/AddHabitModal';
 import EditHabitModal from './components/EditHabitModal';
+import HabitDetailModal from './components/HabitDetailModal';
 
 export default function HabitTracker() {
   const [user, setUser] = useState(null);
@@ -20,6 +21,7 @@ export default function HabitTracker() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState(null);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedHabitForDetail, setSelectedHabitForDetail] = useState(null);
   const [focusMode, setFocusMode] = useState(false);
   
   const [newHabit, setNewHabit] = useState({ 
@@ -429,6 +431,15 @@ export default function HabitTracker() {
     }
   };
 
+  const updateAntiSabotage = async (habitId, antiSabotageData) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'habits', habitId), { antiSabotage: antiSabotageData });
+    } catch (err) {
+      setError("Error al actualizar la información anti-sabotaje.");
+    }
+  };
+
   const updateHabitOrder = async (habitId, direction) => {
     if (!user) return;
     
@@ -752,6 +763,7 @@ export default function HabitTracker() {
                   getGoalForDate={getGoalForDate}
                   focusMode={focusMode}
                   setFocusMode={setFocusMode}
+                  onHabitClick={setSelectedHabitForDetail}
                 />
               )}
 
@@ -801,12 +813,19 @@ export default function HabitTracker() {
               getGoalForDate={getGoalForDate}
               focusMode={focusMode}
               setFocusMode={setFocusMode}
+              onHabitClick={setSelectedHabitForDetail}
             />
           </div>
         )}
       </div>
 
-      <AddHabitModal
+        <HabitDetailModal
+          habit={selectedHabitForDetail}
+          onClose={() => setSelectedHabitForDetail(null)}
+          onSaveAntiSabotage={updateAntiSabotage}
+        />
+
+        <AddHabitModal
         isOpen={isModalOpen}
         onClose={() => {
           setIsModalOpen(false);

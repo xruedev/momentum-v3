@@ -36,7 +36,7 @@ function formatDateSpanish(dateString) {
   return `${day} de ${month}`;
 }
 
-export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, onUpdateHabitOrder, onUpdateMultipleHabitOrders, stats, today, getGoalForDate, focusMode = false, setFocusMode }) {
+export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecrementHabit, onUpdateProgress, onUpdateHabitOrder, onUpdateMultipleHabitOrders, stats, today, getGoalForDate, focusMode = false, setFocusMode, onHabitClick }) {
   const [filterType, setFilterType] = useState('todos'); // 'todos', 'todo', 'todont', 'horas'
   const [viewType, setViewType] = useState('weekly'); // 'weekly' o 'daily'
   const [showFilters, setShowFilters] = useState(false); // Controlar visibilidad de filtros
@@ -954,7 +954,14 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     >
                       <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                         <div className="flex items-center gap-2">
-                          <span className="flex-1">{habit.name}</span>
+                          <span 
+                            className="flex-1 cursor-pointer hover:text-indigo-600 hover:underline transition-all"
+                            onClick={() => {
+                              if (onHabitClick) onHabitClick(habit);
+                            }}
+                          >
+                            {habit.name}
+                          </span>
                           {viewType === 'weekly' && isSortingMode && (
                             <div className="flex flex-col gap-0.5">
                               <button
@@ -1009,7 +1016,12 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                     >
                       <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                         <div className="flex items-center gap-2">
-                          <span className="flex-1">{habit.name}</span>
+                          <span 
+                            className="flex-1 cursor-pointer hover:text-indigo-600 hover:underline transition-all"
+                            onClick={() => onHabitClick && onHabitClick(habit)}
+                          >
+                            {habit.name}
+                          </span>
                           {viewType === 'weekly' && isSortingMode && (
                             <div className="flex flex-col gap-0.5">
                               <button
@@ -1067,7 +1079,12 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       >
                         <td className="py-2 px-3 sticky left-0 bg-white z-10 font-medium text-gray-800">
                           <div className="flex items-center gap-2">
-                            <span className="flex-1">{habit.name}</span>
+                            <span 
+                              className="flex-1 cursor-pointer hover:text-indigo-600 hover:underline transition-all"
+                              onClick={() => onHabitClick && onHabitClick(habit)}
+                            >
+                              {habit.name}
+                            </span>
                             <div className="flex items-center gap-1">
                               {isExpanded ? (
                                 <>
@@ -1227,7 +1244,12 @@ export default function HabitsList({ habits, selectedDate, onToggleHabit, onDecr
                       {getIcon()}
                     </button>
                     <div className="flex-1">
-                      <h3 className={`font-medium ${isCompleted ? `${getCompletedTextColor()} line-through` : 'text-gray-800'}`}>
+                      <h3 
+                        className={`font-medium cursor-pointer hover:text-indigo-600 hover:underline transition-all ${isCompleted ? `${getCompletedTextColor()} line-through` : 'text-gray-800'}`}
+                        onClick={() => {
+                          if (onHabitClick) onHabitClick(habit);
+                        }}
+                      >
                         {habit.name}
                       </h3>
                       {habitType === 'horas' && (() => {
