@@ -1,6 +1,6 @@
-import { Plus, Target, Clock, Trash2, Edit } from 'lucide-react';
+import { Plus, Target, Clock, Trash2, Edit, Snowflake } from 'lucide-react';
 
-export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEditHabit }) {
+export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEditHabit, onToggleFreezeHabit }) {
   const dayNames = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb']; // Mantener orden para compatibilidad con índices
 
   const formatDaysOfWeek = (daysOfWeek) => {
@@ -49,7 +49,7 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEd
         {habits.map((habit) => (
           <div
             key={habit.id}
-            className="border border-gray-200 rounded-lg p-4 bg-white hover:border-indigo-300 transition-colors"
+            className={`border border-gray-200 rounded-lg p-4 bg-white transition-all ${habit.isFrozen ? 'opacity-60 grayscale-[0.3] bg-gray-50 border-dashed' : 'hover:border-indigo-300 shadow-sm hover:shadow-md'}`}
           >
             <div className="flex items-start justify-between">
               <div className="flex-1">
@@ -64,7 +64,15 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEd
                       return <Clock className="w-5 h-5 text-blue-600" />;
                     }
                   })()}
-                  <h3 className="font-medium text-gray-800">{habit.name}</h3>
+                  <h3 className={`font-medium ${habit.isFrozen ? 'text-gray-500' : 'text-gray-800'}`}>
+                    {habit.name}
+                    {habit.isFrozen && (
+                      <span className="ml-2 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
+                        <Snowflake className="w-2.5 h-2.5" />
+                        Congelado
+                      </span>
+                    )}
+                  </h3>
                 </div>
                 
                 <div className="space-y-1 text-sm text-gray-600">
@@ -99,6 +107,13 @@ export default function HabitsOverview({ habits, onAddHabit, onRemoveHabit, onEd
                 </div>
               </div>
               <div className="ml-4 flex items-center gap-2">
+                <button
+                  onClick={() => onToggleFreezeHabit(habit.id, habit.isFrozen)}
+                  className={`p-2 rounded-lg transition-all ${habit.isFrozen ? 'bg-blue-100 text-blue-600 shadow-sm' : 'text-gray-400 hover:text-blue-500 hover:bg-blue-50'}`}
+                  title={habit.isFrozen ? "Descongelar hábito" : "Congelar hábito"}
+                >
+                  <Snowflake className={`w-5 h-5 ${habit.isFrozen ? 'fill-current' : ''}`} />
+                </button>
                 <button
                   onClick={() => onEditHabit(habit)}
                   className="p-2 text-gray-400 hover:text-indigo-600 transition-colors"

@@ -1,4 +1,4 @@
-import { TrendingUp } from 'lucide-react';
+import { TrendingUp, Snowflake } from 'lucide-react';
 
 export default function HabitsStats({ habits, getGoalForDate }) {
   if (habits.length === 0) {
@@ -26,8 +26,16 @@ export default function HabitsStats({ habits, getGoalForDate }) {
         }).length;
 
         return (
-          <div key={habit.id} className="border border-gray-200 rounded-lg p-4 bg-white">
-            <h3 className="font-medium text-gray-800 mb-3">{habit.name}</h3>
+          <div key={habit.id} className={`border border-gray-200 rounded-lg p-4 bg-white ${habit.isFrozen ? 'opacity-80' : ''}`}>
+            <h3 className="font-medium text-gray-800 mb-3 flex items-center justify-between">
+              {habit.name}
+              {habit.isFrozen && (
+                <span className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-bold uppercase tracking-wider">
+                  <Snowflake className="w-2.5 h-2.5" />
+                  Congelado
+                </span>
+              )}
+            </h3>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <div className="text-2xl font-bold text-indigo-600">{completedDays}</div>

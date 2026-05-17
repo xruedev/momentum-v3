@@ -23,6 +23,8 @@ export default function HabitTracker() {
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedHabitForDetail, setSelectedHabitForDetail] = useState(null);
   const [focusMode, setFocusMode] = useState(false);
+
+  const activeHabits = useMemo(() => habits.filter(h => !h.isFrozen), [habits]);
   
   const [newHabit, setNewHabit] = useState({ 
     name: '', 
@@ -440,6 +442,15 @@ export default function HabitTracker() {
     }
   };
 
+  const toggleFreezeHabit = async (habitId, currentStatus) => {
+    if (!user) return;
+    try {
+      await updateDoc(doc(db, 'habits', habitId), { isFrozen: !currentStatus });
+    } catch (err) {
+      setError("Error al cambiar el estado de congelación.");
+    }
+  };
+
   const updateHabitOrder = async (habitId, direction) => {
     if (!user) return;
     
@@ -751,7 +762,7 @@ export default function HabitTracker() {
             <div className="p-6">
               {activeTab === 'list' && (
                 <HabitsList
-                  habits={habits}
+                  habits={activeHabits}
                   selectedDate={selectedDate}
                   onToggleHabit={toggleHabit}
                   onDecrementHabit={decrementHabit}
@@ -773,12 +784,13 @@ export default function HabitTracker() {
                   onAddHabit={() => setIsModalOpen(true)}
                   onRemoveHabit={removeHabit}
                   onEditHabit={handleEditHabit}
+                  onToggleFreezeHabit={toggleFreezeHabit}
                 />
               )}
 
               {activeTab === 'calendar' && (
                 <HabitsCalendar
-                  habits={habits}
+                  habits={activeHabits}
                   selectedDate={selectedDate}
                   today={today}
                   onDateSelect={setSelectedDate}
@@ -801,7 +813,7 @@ export default function HabitTracker() {
         {focusMode && (
           <div className="bg-white rounded-xl shadow-lg p-6">
             <HabitsList
-              habits={habits}
+              habits={activeHabits}
               selectedDate={selectedDate}
               onToggleHabit={toggleHabit}
               onDecrementHabit={decrementHabit}
