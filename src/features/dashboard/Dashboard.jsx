@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Target, ArrowRight } from 'lucide-react';
+import { Target, ArrowRight, Code } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -12,8 +12,15 @@ export default function Dashboard() {
       icon: Target,
       color: 'indigo',
       route: '/habits'
+    },
+    {
+      id: 'developer-hub',
+      title: 'Developer Hub',
+      description: 'Daily dashboard for developer tasks and goals',
+      icon: Code,
+      color: 'purple',
+      route: '/developer-hub'
     }
-    // Future features can be added here easily
   ];
 
   return (
@@ -30,17 +37,22 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((feature) => {
             const Icon = feature.icon;
+            const bgClass = feature.color === 'purple' ? 'bg-purple-100' : 'bg-indigo-100';
+            const textClass = feature.color === 'purple' ? 'text-purple-600' : 'text-indigo-600';
+            const borderHoverClass = feature.color === 'purple' ? 'hover:border-purple-300' : 'hover:border-indigo-300';
+            const arrowHoverClass = feature.color === 'purple' ? 'group-hover:text-purple-600' : 'group-hover:text-indigo-600';
+
             return (
               <div
                 key={feature.id}
                 onClick={() => navigate(feature.route)}
-                className="bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-all cursor-pointer border-2 border-transparent hover:border-indigo-300 group"
+                className={`bg-white rounded-xl shadow-lg p-6 hover:shadow-xl transition-all cursor-pointer border-2 border-transparent ${borderHoverClass} group`}
               >
                 <div className="flex items-start justify-between mb-4">
-                  <div className="p-3 rounded-lg bg-indigo-100">
-                    <Icon className="w-8 h-8 text-indigo-600" />
+                  <div className={`p-3 rounded-lg ${bgClass}`}>
+                    <Icon className={`w-8 h-8 ${textClass}`} />
                   </div>
-                  <ArrowRight className="w-5 h-5 text-gray-400 group-hover:text-indigo-600 transition-colors" />
+                  <ArrowRight className={`w-5 h-5 text-gray-400 ${arrowHoverClass} transition-colors`} />
                 </div>
                 <h3 className="text-xl font-semibold text-gray-800 mb-2">{feature.title}</h3>
                 <p className="text-gray-600 text-sm">{feature.description}</p>

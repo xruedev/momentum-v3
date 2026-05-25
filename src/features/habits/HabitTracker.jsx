@@ -171,7 +171,8 @@ export default function HabitTracker() {
       habitsQuery, 
       async (snapshot) => {
         try {
-          const habitsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const allDocs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          const habitsList = allDocs.filter(h => h.type !== 'dev_task' && h.type !== 'dev_goal');
           
           // Migración automática: asignar order a hábitos que no lo tienen
           const habitsNeedingMigration = habitsList.filter(habit => habit.order === undefined);
