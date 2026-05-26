@@ -16,7 +16,9 @@ import {
   CheckSquare, 
   Code,
   Briefcase,
-  Layers
+  Layers,
+  BookOpen,
+  Save
 } from 'lucide-react';
 
 function generateId() {
@@ -40,6 +42,12 @@ export default function DeveloperHub() {
   const [tasks, setTasks] = useState([]);
   const [goals, setGoals] = useState([]);
   
+  // Journal states
+  const [journalText, setJournalText] = useState('');
+  const [localJournalText, setLocalJournalText] = useState('');
+  const [isSavingJournal, setIsSavingJournal] = useState(false);
+  const [isEditingJournal, setIsEditingJournal] = useState(false);
+
   // Date state (defaults to today's local date)
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const today = new Date().toISOString().split('T')[0];
@@ -104,6 +112,10 @@ export default function DeveloperHub() {
       goalList.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
       setGoals(goalList);
 
+      // Filter journal for the selected date
+      const journalEntry = allItems.find(item => item.type === 'dev_journal' && item.date === selectedDate);
+      setJournalText(journalEntry ? journalEntry.text : '');
+
       setLoading(false);
       setError(null);
     }, (err) => {
@@ -114,6 +126,13 @@ export default function DeveloperHub() {
 
     return () => unsubscribe();
   }, [user, selectedDate]);
+
+  // Sync local text when database updates, but not when user is actively typing
+  useEffect(() => {
+    if (!isEditingJournal) {
+      setLocalJournalText(journalText);
+    }
+  }, [journalText, isEditingJournal]);
 
   // Group goals by category
   const groupedGoals = useMemo(() => {
@@ -166,10 +185,15 @@ export default function DeveloperHub() {
   const handleMoveToNextDay = async (task) => {
     if (!user) return;
     try {
-      // Calculate next day date string relative to the task's current date
-      const currentDate = new Date(task.date + 'T00:00:00');
+      // Calculate next day date string using local split representation
+      const [year, month, day] = task.date.split('-').map(Number);
+      const currentDate = new Date(year, month - 1, day);
       currentDate.setDate(currentDate.getDate() + 1);
-      const nextDayStr = currentDate.toISOString().split('T')[0];
+      
+      const y = currentDate.getFullYear();
+      const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+      const d = String(currentDate.getDate()).padStart(2, '0');
+      const nextDayStr = `${y}-${m}-${d}`;
 
       await updateDoc(doc(db, 'habits', task.id), {
         date: nextDayStr
@@ -251,18 +275,48 @@ export default function DeveloperHub() {
     }
   };
 
-  // 6. Helpers
+  // 6. Journal Operations
+  const handleSaveJournal = async () => {
+    if (!user) return;
+    setIsSavingJournal(true);
+    try {
+      const jId = `${user.uid}_${selectedDate}_journal`;
+      await setDoc(doc(db, 'habits', jId), {
+        id: jId,
+        userId: user.uid,
+        name: `Journal ${selectedDate}`,
+        text: localJournalText,
+        type: 'dev_journal',
+        date: selectedDate,
+        createdAt: new Date().toISOString(),
+        order: 0
+      });
+      setError(null);
+    } catch (err) {
+      console.error('Error al guardar diario:', err);
+      setError("No se pudo guardar el diario: " + err.message);
+    } finally {
+      setIsSavingJournal(false);
+    }
+  };
+
+  // 7. Helpers
   const shiftDate = (days) => {
-    const currentDate = new Date(selectedDate + 'T00:00:00');
+    const [year, month, day] = selectedDate.split('-').map(Number);
+    const currentDate = new Date(year, month - 1, day);
     currentDate.setDate(currentDate.getDate() + days);
-    setSelectedDate(currentDate.toISOString().split('T')[0]);
+    
+    const y = currentDate.getFullYear();
+    const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+    const d = String(currentDate.getDate()).padStart(2, '0');
+    setSelectedDate(`${y}-${m}-${d}`);
   };
 
   const formatDateLabel = (dateString) => {
     if (dateString === today) return 'Hoy';
     
-    // Format: "Lunes, 25 de Mayo"
-    const date = new Date(dateString + 'T00:00:00');
+    const [year, month, day] = dateString.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
     return date.toLocaleDateString('es-ES', { 
       weekday: 'long', 
       day: 'numeric', 
@@ -307,12 +361,19 @@ export default function DeveloperHub() {
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
-          <div className="px-4 text-center min-w-[140px]">
-            <span className="text-sm font-bold block text-purple-600">
+          <div className="px-4 text-center min-w-[140px] flex flex-col items-center">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSelectedDate(e.target.value);
+                }
+              }}
+              className="text-sm font-bold text-purple-600 bg-transparent border-none focus:outline-none cursor-pointer text-center p-0 h-auto w-[130px] focus:ring-0"
+            />
+            <span className="text-[10px] text-gray-400 font-mono mt-0.5">
               {formatDateLabel(selectedDate)}
-            </span>
-            <span className="text-[10px] text-gray-400 font-mono">
-              {selectedDate}
             </span>
           </div>
           <button
@@ -346,115 +407,164 @@ export default function DeveloperHub() {
       {/* Workspace Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
         
-        {/* LEFT: To-Do List Block (7 cols) */}
-        <section className="lg:col-span-7 bg-white rounded-2xl p-6 shadow-lg border border-gray-150 relative overflow-hidden group/tasks">
+        {/* LEFT PANEL: Daily items stacked vertically (8 columns) */}
+        <div className="lg:col-span-8 flex flex-col gap-8 w-full">
           
-          <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
-            <Layers className="w-5 h-5 text-purple-600" />
-            <h2 className="text-xl font-bold text-gray-800">Tareas Diarias</h2>
-            <span className="ml-auto text-xs font-mono text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
-              {tasks.length} {tasks.length === 1 ? 'tarea' : 'tareas'}
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="py-20 flex items-center justify-center">
-              <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
+          {/* Card 1: To-Do List */}
+          <section className="bg-white rounded-2xl p-6 shadow-lg border border-gray-150 relative overflow-hidden group/tasks w-full">
+            
+            <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
+              <Layers className="w-5 h-5 text-purple-600" />
+              <h2 className="text-xl font-bold text-gray-800">Tareas Diarias</h2>
+              <span className="ml-auto text-xs font-mono text-gray-500 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-200">
+                {tasks.length} {tasks.length === 1 ? 'tarea' : 'tareas'}
+              </span>
             </div>
-          ) : (
-            <div className="space-y-3 min-h-[250px] flex flex-col justify-between">
-              
-              {/* Tasks List */}
-              <div className="space-y-2.5">
-                {tasks.map((task) => (
-                  <div 
-                    key={task.id} 
-                    className={`flex items-center justify-between gap-3 p-3.5 bg-white border rounded-xl hover:border-purple-200 hover:shadow-sm transition-all duration-300 group/item ${
-                      task.completed 
-                        ? 'border-gray-100 opacity-60 bg-gray-50/50' 
-                        : 'border-gray-200'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3.5 flex-1 min-w-0">
-                      {/* Checkbox */}
-                      <button
-                        onClick={() => handleToggleTask(task)}
-                        className="flex-shrink-0 text-gray-400 hover:text-purple-600 transition-colors"
-                        title={task.completed ? "Marcar incompleto" : "Completar"}
-                      >
-                        {task.completed ? (
-                          <CheckSquare className="w-5 h-5 text-purple-600 fill-purple-100/30" />
-                        ) : (
-                          <Square className="w-5 h-5 hover:scale-105 transition-transform" />
-                        )}
-                      </button>
 
-                      <span className={`text-sm truncate pr-2 ${
-                        task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'
-                      }`}>
-                        {task.text}
-                      </span>
-                    </div>
-
-                    {/* Action buttons */}
-                    <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover/item:opacity-100 transition-opacity duration-300">
-                      <button
-                        onClick={() => handleMoveToNextDay(task)}
-                        className="p-1.5 hover:bg-purple-50 rounded-lg text-gray-500 hover:text-purple-600 transition-colors border border-transparent hover:border-purple-200"
-                        title="Mover al día siguiente"
-                      >
-                        <ArrowRight className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteTask(task.id)}
-                        className="p-1.5 hover:bg-red-50 rounded-lg text-gray-500 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
-                        title="Eliminar tarea"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-                {tasks.length === 0 && (
-                  <div className="text-center py-16 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
-                    <p className="text-gray-400 text-sm">No tienes tareas para este día.</p>
-                    <p className="text-[10px] text-gray-500 mt-1">Escribe abajo para añadir una.</p>
-                  </div>
-                )}
+            {loading ? (
+              <div className="py-20 flex items-center justify-center">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-600" />
               </div>
+            ) : (
+              <div className="space-y-3 min-h-[250px] flex flex-col justify-between">
+                
+                {/* Tasks List */}
+                <div className="space-y-2.5">
+                  {tasks.map((task) => (
+                    <div 
+                      key={task.id} 
+                      className={`flex items-center justify-between gap-3 p-3.5 bg-white border rounded-xl hover:border-purple-200 hover:shadow-sm transition-all duration-300 group/item ${
+                        task.completed 
+                          ? 'border-gray-100 opacity-60 bg-gray-50/50' 
+                          : 'border-gray-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3.5 flex-1 min-w-0">
+                        {/* Checkbox */}
+                        <button
+                          onClick={() => handleToggleTask(task)}
+                          className="flex-shrink-0 text-gray-400 hover:text-purple-600 transition-colors"
+                          title={task.completed ? "Marcar incompleto" : "Completar"}
+                        >
+                          {task.completed ? (
+                            <CheckSquare className="w-5 h-5 text-purple-600 fill-purple-100/30" />
+                          ) : (
+                            <Square className="w-5 h-5 hover:scale-105 transition-transform" />
+                          )}
+                        </button>
 
-              {/* Inline task creator placeholder (always at the bottom) */}
-              <form 
-                onSubmit={handleAddTask} 
-                className="mt-6 flex items-center gap-3 p-3.5 bg-gray-50/50 rounded-xl border border-gray-200 focus-within:border-purple-400 focus-within:bg-white focus-within:shadow-inner transition-all duration-300"
-              >
-                <div className="flex-shrink-0 text-gray-400">
-                  <Square className="w-5 h-5 opacity-50" />
+                        <span className={`text-sm truncate pr-2 ${
+                          task.completed ? 'line-through text-gray-400' : 'text-gray-700 font-medium'
+                        }`}>
+                          {task.text}
+                        </span>
+                      </div>
+
+                      {/* Action buttons */}
+                      <div className="flex items-center gap-1.5 opacity-100 md:opacity-0 md:group-hover/item:opacity-100 transition-opacity duration-300">
+                        <button
+                          onClick={() => handleMoveToNextDay(task)}
+                          className="p-1.5 hover:bg-purple-50 rounded-lg text-gray-500 hover:text-purple-600 transition-colors border border-transparent hover:border-purple-200"
+                          title="Mover al día siguiente"
+                        >
+                          <ArrowRight className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteTask(task.id)}
+                          className="p-1.5 hover:bg-red-50 rounded-lg text-gray-500 hover:text-red-600 transition-colors border border-transparent hover:border-red-200"
+                          title="Eliminar tarea"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {tasks.length === 0 && (
+                    <div className="text-center py-16 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                      <p className="text-gray-400 text-sm">No tienes tareas para este día.</p>
+                      <p className="text-[10px] text-gray-500 mt-1">Escribe abajo para añadir una.</p>
+                    </div>
+                  )}
                 </div>
-                <input
-                  type="text"
-                  value={newTaskText}
-                  onChange={(e) => setNewTaskText(e.target.value)}
-                  placeholder="Nueva tarea"
-                  className="bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none w-full font-medium"
-                />
-                {newTaskText.trim() && (
-                  <button
-                    type="submit"
-                    className="p-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center animate-in scale-in duration-200 shadow-md shadow-purple-200"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                )}
-              </form>
 
+                {/* Inline task creator placeholder */}
+                <form 
+                  onSubmit={handleAddTask} 
+                  className="mt-6 flex items-center gap-3 p-3.5 bg-gray-50/50 rounded-xl border border-gray-200 focus-within:border-purple-400 focus-within:bg-white focus-within:shadow-inner transition-all duration-300"
+                >
+                  <div className="flex-shrink-0 text-gray-400">
+                    <Square className="w-5 h-5 opacity-50" />
+                  </div>
+                  <input
+                    type="text"
+                    value={newTaskText}
+                    onChange={(e) => setNewTaskText(e.target.value)}
+                    placeholder="Nueva tarea"
+                    className="bg-transparent text-sm text-gray-700 placeholder-gray-400 focus:outline-none w-full font-medium"
+                  />
+                  {newTaskText.trim() && (
+                    <button
+                      type="submit"
+                      className="p-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors flex items-center justify-center animate-in scale-in duration-200 shadow-md shadow-purple-200"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  )}
+                </form>
+
+              </div>
+            )}
+          </section>
+
+          {/* Card 2: DEV Journal */}
+          <section className="bg-white rounded-2xl p-6 shadow-lg border border-gray-150 relative overflow-hidden group/journal w-full">
+            <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
+              <BookOpen className="w-5 h-5 text-purple-600" />
+              <h2 className="text-xl font-bold text-gray-800">Diario de DEV</h2>
+              {isSavingJournal ? (
+                <span className="ml-auto text-xs text-purple-600 flex items-center gap-1">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Guardando...
+                </span>
+              ) : (
+                <span className="ml-auto text-xs text-gray-450">
+                  Auto-guarda al hacer clic fuera
+                </span>
+              )}
             </div>
-          )}
-        </section>
 
-        {/* RIGHT: Goals Block (5 cols) */}
-        <section className="lg:col-span-5 bg-white rounded-2xl p-6 shadow-lg border border-gray-150 relative overflow-hidden group/goals">
+            <div className="space-y-4">
+              <textarea
+                value={localJournalText}
+                onChange={(e) => setLocalJournalText(e.target.value)}
+                onFocus={() => setIsEditingJournal(true)}
+                onBlur={() => {
+                  setIsEditingJournal(false);
+                  handleSaveJournal();
+                }}
+                placeholder="¿Qué has aprendido hoy? ¿Alguna duda, problemas o puntos de mejora?"
+                className="w-full min-h-[160px] p-4 bg-gray-50/50 border border-gray-200 rounded-xl focus:border-purple-400 focus:bg-white focus:outline-none text-sm text-gray-700 placeholder-gray-400 font-medium transition-all duration-300 resize-y"
+              />
+
+              <div className="flex justify-end">
+                <button
+                  onClick={handleSaveJournal}
+                  disabled={isSavingJournal}
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-semibold transition-all shadow-sm shadow-purple-100 hover:shadow-md flex items-center gap-2 disabled:opacity-50"
+                  title="Guardar diario"
+                >
+                  <Save className="w-4 h-4" />
+                  {isSavingJournal ? 'Guardando...' : 'Guardar'}
+                </button>
+              </div>
+            </div>
+          </section>
+
+        </div>
+
+        {/* RIGHT PANEL: Persistent items (Goals) (4 columns) */}
+        <section className="lg:col-span-4 bg-white rounded-2xl p-6 shadow-lg border border-gray-150 relative overflow-hidden group/goals w-full">
           
           <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-4">
             <Briefcase className="w-5 h-5 text-indigo-600" />

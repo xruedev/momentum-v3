@@ -136,37 +136,17 @@ The **Developer Hub** is designed as a daily, single-page dashboard for develope
 
 ### 1. User Interface & Layout (Single-Page)
 
-The layout is split into two primary functional blocks:
+To maintain clean proportions when the **Goals** block grows vertically, the layout uses a 2-column grid system (`grid-cols-1 lg:grid-cols-12`) with independent columns:
 
-#### A. To-Do List Block
-*   **Task Items**: Each task displays a checkbox, the task text, a "Move to next day" action, and a "Delete" action.
-    ```
-    [checkbox] Task Text                 =>[Move to next day] [Delete]
-    ```
-*   **Inline Add Task**: A persistent input field is placed at the end of the task list, displaying a placeholder to immediately write and submit a new task.
-    ```
-    [ ] ...Start typing...
-    ```
-*   **Move to Next Day Action**: Increments the task's active date by 1 day (pushing it from today's list into tomorrow's list).
-
-#### B. Goals Block
-*   **Categories**: Two hardcoded categories: **Liquidcars** and **Developer**.
-*   **Adding Goals**: An add icon is positioned next to each category header (e.g., `Liquidcars [add goal icon]`).
-*   **Goal Items**: Each goal displays the goal text followed by "Edit text" and "Delete" actions.
-    ```
-    Goals
-    Liquidcars [+]
-    - Goal 1           [Edit text][Delete]
-    - Goal 2           [Edit text][Delete]
-
-    Developer [+]
-    - Goal 1           [Edit text][Delete]
-    - Goal 2           [Edit text][Delete]
-    ```
+*   **LEFT COLUMN (8/12 width - Daily Items)**: Stacks the daily-scoped blocks vertically:
+    *   **A. Tareas Diarias (Daily To-Do List)**: Checkboxes, task text, a "Move to next day" button, and a "Delete" button. Persistent inline text input (`placeholder="Nueva tarea"`) for inline task creation.
+    *   **B. Diario de DEV (DEV Journal)**: Scoped to the selected date. Rich textarea allowing notes (learned today, doubts, improvements) with an auto-save handler on blur and a manual "Guardar" button.
+*   **RIGHT COLUMN (4/12 width - Persistent Goals)**: Houses the persistent goals list, allowing it to stretch vertically without pushing other blocks:
+    *   **C. Objetivos (Goals)**: Hardcoded headers for **Liquidcars** and **Developer**. Next to each header is a `[+]` button that activates an inline input field to add new goals. Goal rows support inline editing and deletion.
 
 ### 2. Firestore Schema & Data Design (Unified in 'habits' Collection)
 
-To bypass strict Firestore security constraints without modifying remote database rules, tasks and goals are stored directly inside the existing `habits` collection. The application differentiates them using the `type` field and filters them on the client side.
+To bypass strict Firestore security constraints without modifying remote database rules, tasks, goals, and journal entries are stored directly inside the existing `habits` collection. The application differentiates them using the `type` field and filters them on the client side.
 
 #### Developer Hub Tasks (Stored as `type: 'dev_task'`)
 | Field Name | Type | Description |
@@ -193,9 +173,21 @@ To bypass strict Firestore security constraints without modifying remote databas
 | `type` | `string` | Set to `'dev_goal'` |
 | `order` | `number` | Set to `0` to prevent trigger loops in Habit Tracker migrations. |
 
+#### DEV Journal Entries (Stored as `type: 'dev_journal'`)
+| Field Name | Type | Description |
+| :--- | :--- | :--- |
+| `id` | `string` | Deterministic ID formatted as `${userId}_${date}_journal` to guarantee single daily records. |
+| `userId` | `string` | The Firebase Auth `uid` of the owning user. |
+| `name` | `string` | Helper display label (e.g. `"Journal YYYY-MM-DD"`). |
+| `text` | `string` | Content text body (notes, lessons, doubts). |
+| `date` | `string` | Selected date key in `YYYY-MM-DD` format. |
+| `createdAt` | `string` | ISO 8601 string. |
+| `type` | `string` | Set to `'dev_journal'` |
+| `order` | `number` | Set to `0`. |
+
 #### Client-side Filtering
-*   **Habit Tracker**: Snapshot queries in [HabitTracker.jsx](file:///c:/PersonalProjects/repos/momentum-v3/src/features/habits/HabitTracker.jsx) read all habits, but filter out elements where `type === 'dev_task'` or `type === 'dev_goal'` inside the callback to avoid lists pollution.
-*   **Developer Hub**: A single snapshot listener in [DeveloperHub.jsx](file:///c:/PersonalProjects/repos/momentum-v3/src/features/developer-hub/DeveloperHub.jsx) reads habits and filters them into task and goal arrays based on their `type` on the client side. This achieves zero-configuration index safety.
+*   **Habit Tracker**: Snapshot queries in [HabitTracker.jsx](file:///c:/PersonalProjects/repos/momentum-v3/src/features/habits/HabitTracker.jsx) read all habits, but filter out elements where `type === 'dev_task'`, `type === 'dev_goal'`, or `type === 'dev_journal'` inside the callback to avoid lists pollution.
+*   **Developer Hub**: A single snapshot listener in [DeveloperHub.jsx](file:///c:/PersonalProjects/repos/momentum-v3/src/features/developer-hub/DeveloperHub.jsx) reads habits and filters them into task, goal, and journal records based on their `type` on the client side. This achieves zero-configuration index safety.
 
 ### 3. Integration & Routing Architecture
 *   **New Feature Directory**: `src/features/developer-hub/DeveloperHub.jsx` contains the all-in-one page logic.
