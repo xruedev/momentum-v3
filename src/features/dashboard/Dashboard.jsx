@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { Target, ArrowRight, Code } from 'lucide-react';
+import { Target, ArrowRight, Code, Map } from 'lucide-react';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -20,6 +20,14 @@ export default function Dashboard() {
       icon: Code,
       color: 'purple',
       route: '/developer-hub'
+    },
+    {
+      id: 'goals',
+      title: 'Goals',
+      description: 'Define y visualiza tus metas a largo plazo usando un mapa de nodos interconectados',
+      icon: Map,
+      color: 'emerald',
+      route: '/goals'
     }
   ];
 
@@ -37,10 +45,18 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {features.map((feature) => {
             const Icon = feature.icon;
-            const bgClass = feature.color === 'purple' ? 'bg-purple-100' : 'bg-indigo-100';
-            const textClass = feature.color === 'purple' ? 'text-purple-600' : 'text-indigo-600';
-            const borderHoverClass = feature.color === 'purple' ? 'hover:border-purple-300' : 'hover:border-indigo-300';
-            const arrowHoverClass = feature.color === 'purple' ? 'group-hover:text-purple-600' : 'group-hover:text-indigo-600';
+            const bgClass = 
+              feature.color === 'purple' ? 'bg-purple-100' : 
+              feature.color === 'emerald' ? 'bg-emerald-100' : 'bg-indigo-100';
+            const textClass = 
+              feature.color === 'purple' ? 'text-purple-600' : 
+              feature.color === 'emerald' ? 'text-emerald-600' : 'text-indigo-600';
+            const borderHoverClass = 
+              feature.color === 'purple' ? 'hover:border-purple-300' : 
+              feature.color === 'emerald' ? 'hover:border-emerald-300' : 'hover:border-indigo-300';
+            const arrowHoverClass = 
+              feature.color === 'purple' ? 'group-hover:text-purple-600' : 
+              feature.color === 'emerald' ? 'group-hover:text-emerald-600' : 'group-hover:text-indigo-600';
 
             return (
               <div
