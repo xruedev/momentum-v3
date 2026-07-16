@@ -1,12 +1,12 @@
 /* eslint-disable react/prop-types */
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import { db, auth, firebaseError } from '../../firebase';
 import { 
   Loader2, ArrowLeft, Plus, Check, Trash2, Edit3, X, MapPin, 
-  Target, Info
+  Target, Info, FolderPlus, Folder, ChevronRight
 } from 'lucide-react';
 
 // UUID v4 helper generator
@@ -28,9 +28,6 @@ export default function GoalDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   
-  // SVG connections state
-  const [lines, setLines] = useState([]);
-  
   // Inline adding states
   const [newSubgoalName, setNewSubgoalName] = useState('');
   const [isAddingSubgoal, setIsAddingSubgoal] = useState(false);
@@ -51,6 +48,41 @@ export default function GoalDetail() {
   const prevSubgoalIdRef = useRef(null);
   
   const boardRef = useRef(null);
+
+  // Categories states
+  const [selectedCategoryId, setSelectedCategoryId] = useState(null);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [isAddingCategory, setIsAddingCategory] = useState(false);
+  const [editingCategoryId, setEditingCategoryId] = useState(null);
+  const [editCategoryName, setEditCategoryName] = useState('');
+
+  // Helper: Obtener lista de categorías (incluyendo virtual "Sin categoría")
+  const getCategoriesList = useCallback(() => {
+    if (!roadmap) return [];
+    const list = [...(roadmap.categories || [])];
+    
+    // Check if there are any subgoals with no categoryId or an invalid categoryId
+    const hasUncategorized = (roadmap.subgoals || []).some(
+      s => !s.categoryId || !list.some(c => c.id === s.categoryId)
+    );
+    
+    if (hasUncategorized) {
+      list.push({ id: 'uncategorized', name: 'Sin categoría' });
+    }
+    
+    return list;
+  }, [roadmap]);
+
+  // Validar si la categoría seleccionada sigue existiendo (p. ej. tras eliminación)
+  useEffect(() => {
+    if (roadmap && selectedCategoryId) {
+      const cats = getCategoriesList();
+      const exists = cats.some(c => c.id === selectedCategoryId);
+      if (!exists) {
+        setSelectedCategoryId(null);
+      }
+    }
+  }, [roadmap, selectedCategoryId, getCategoriesList]);
 
   // 1. Auth check
   useEffect(() => {
@@ -128,63 +160,10 @@ export default function GoalDetail() {
     }
   };
 
-  // 3. SVG Line Calculation Logic
-  const recalculateLines = useCallback(() => {
-    const container = boardRef.current;
-    if (!container || !roadmap) return;
 
-    const containerRect = container.getBoundingClientRect();
-    const rootDot = document.getElementById('root-connector');
-    const computedLines = [];
-
-    if (rootDot && roadmap.subgoals) {
-      const rRect = rootDot.getBoundingClientRect();
-      const rx = rRect.left - containerRect.left + rRect.width / 2;
-      const ry = rRect.top - containerRect.top + rRect.height / 2;
-
-      roadmap.subgoals.forEach((subgoal) => {
-        const subLeftDot = document.getElementById(`subgoal-left-${subgoal.id}`);
-        if (subLeftDot) {
-          const slRect = subLeftDot.getBoundingClientRect();
-          const slx = slRect.left - containerRect.left + slRect.width / 2;
-          const sly = slRect.top - containerRect.top + slRect.height / 2;
-          
-          // Un subobjetivo está completo si tiene pasos y todos están completados
-          const hasSteps = subgoal.steps && subgoal.steps.length > 0;
-          const isCompleted = hasSteps && subgoal.steps.every(s => s.completed);
-
-          computedLines.push({
-            id: `root-to-${subgoal.id}`,
-            x1: rx,
-            y1: ry,
-            x2: slx,
-            y2: sly,
-            completed: isCompleted
-          });
-        }
-      });
-    }
-
-    setLines(computedLines);
-  }, [roadmap]);
-
-  // Recalculate positions on data load, edits, resizing
-  useLayoutEffect(() => {
-    if (!loading && roadmap) {
-      const handle = requestAnimationFrame(() => {
-        recalculateLines();
-      });
-      return () => cancelAnimationFrame(handle);
-    }
-  }, [loading, roadmap, recalculateLines]);
-
-  useEffect(() => {
-    window.addEventListener('resize', recalculateLines);
-    return () => window.removeEventListener('resize', recalculateLines);
-  }, [recalculateLines]);
 
   // Helper: Recalcula porcentajes totales y subobjetivos
-  const updateRoadmapData = async (updatedSubgoals) => {
+  const updateRoadmapData = async (updatedSubgoals, updatedCategories = null) => {
     if (!db || !id) return;
     
     // Calcular porcentaje de cada subobjetivo
@@ -200,9 +179,12 @@ export default function GoalDetail() {
     const totalCompleted = subgoals.reduce((acc, s) => acc + (s.steps?.filter(st => st.completed).length || 0), 0);
     const pctg = totalSteps > 0 ? Math.round((totalCompleted / totalSteps) * 100) : 0;
 
+    const catsToSave = updatedCategories !== null ? updatedCategories : (roadmap?.categories || []);
+
     try {
       await updateDoc(doc(db, 'habits', id), {
         subgoals,
+        categories: catsToSave,
         pctg,
         updatedAt: new Date().toISOString()
       });
@@ -214,6 +196,66 @@ export default function GoalDetail() {
 
   // ── Database Operations ──────────────────────────────────────────
 
+  // Agregar Categoría
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    if (!newCategoryName.trim()) return;
+
+    const newCat = {
+      id: generateUUID(),
+      name: newCategoryName.trim()
+    };
+
+    const list = [...(roadmap.categories || []), newCat];
+    setNewCategoryName('');
+    setIsAddingCategory(false);
+    setSelectedCategoryId(newCat.id);
+    await updateRoadmapData(roadmap.subgoals || [], list);
+  };
+
+  // Eliminar Categoría
+  const handleDeleteCategory = async (categoryId) => {
+    if (categoryId === 'uncategorized') {
+      alert('No se puede eliminar la categoría por defecto.');
+      return;
+    }
+    
+    if (!window.confirm('¿Eliminar esta categoría y todos sus subobjetivos? Esta acción no se puede deshacer.')) return;
+    
+    const updatedCategories = (roadmap.categories || []).filter(c => c.id !== categoryId);
+    const updatedSubgoals = (roadmap.subgoals || []).filter(s => s.categoryId !== categoryId);
+    
+    if (selectedCategoryId === categoryId) {
+      setSelectedCategoryId(null);
+    }
+    
+    await updateRoadmapData(updatedSubgoals, updatedCategories);
+  };
+
+  // Renombrar Categoría
+  const saveRenameCategory = async (categoryId) => {
+    if (!editCategoryName.trim()) return;
+    const list = (roadmap.categories || []).map(c => {
+      if (c.id === categoryId) {
+        return { ...c, name: editCategoryName.trim() };
+      }
+      return c;
+    });
+    setEditingCategoryId(null);
+    await updateRoadmapData(roadmap.subgoals || [], list);
+  };
+
+  // Mover Subobjetivo de Categoría
+  const handleMoveSubgoal = async (subgoalId, targetCategoryId) => {
+    const list = (roadmap.subgoals || []).map(s => {
+      if (s.id === subgoalId) {
+        return { ...s, categoryId: targetCategoryId || null };
+      }
+      return s;
+    });
+    await updateRoadmapData(list);
+  };
+
   // Agregar Subobjetivo
   const handleAddSubgoal = async (e) => {
     e.preventDefault();
@@ -222,6 +264,7 @@ export default function GoalDetail() {
     const newSub = {
       id: generateUUID(),
       name: newSubgoalName.trim(),
+      categoryId: selectedCategoryId === 'uncategorized' ? null : selectedCategoryId,
       pctg: 0,
       steps: []
     };
@@ -453,245 +496,448 @@ export default function GoalDetail() {
         {/* Tablero de Nodos Interactivos */}
         <div 
           id="node-board-container" 
-          ref={boardRef}
-          className="relative bg-white/40 border border-white/30 rounded-3xl p-10 min-h-[550px] flex gap-20 items-stretch z-10 overflow-hidden shadow-inner"
+          className="relative bg-white/40 border border-white/30 rounded-3xl p-8 min-h-[580px] flex gap-16 items-stretch z-10 overflow-hidden shadow-inner"
         >
-          {/* Canvas SVG de Conexiones */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none z-0">
-            <defs>
-              <linearGradient id="completed-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
-                <stop offset="100%" stopColor="#059669" stopOpacity="0.8" />
-              </linearGradient>
-              <linearGradient id="pending-grad" x1="0%" y1="0%" x2="100%" y2="0%">
-                <stop offset="0%" stopColor="#818cf8" stopOpacity="0.5" />
-                <stop offset="100%" stopColor="#a5b4fc" stopOpacity="0.3" />
-              </linearGradient>
-              <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                <feGaussianBlur stdDeviation="3" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-            {lines.map((line) => {
-              // Curva Bézier cúbica suave
-              const dx = Math.abs(line.x2 - line.x1);
-              const controlOffset = Math.min(dx * 0.5, 120);
-              const d = `M ${line.x1} ${line.y1} C ${line.x1 + controlOffset} ${line.y1}, ${line.x2 - controlOffset} ${line.y2}, ${line.x2} ${line.y2}`;
-              
-              return (
-                <path
-                  key={line.id}
-                  d={d}
-                  fill="none"
-                  stroke={line.completed ? 'url(#completed-grad)' : 'url(#pending-grad)'}
-                  strokeWidth={line.completed ? 4 : 2.5}
-                  filter={line.completed ? 'url(#glow)' : undefined}
-                  className="transition-all duration-300"
-                />
-              );
-            })}
-          </svg>
+          {/* Línea Conectora entre Nivel 1 y Nivel 2 */}
+          {selectedCategoryId && (
+            <div className="absolute left-[320px] w-16 top-0 bottom-0 flex items-center justify-center z-0 pointer-events-none animate-in fade-in duration-300">
+              <div className="w-full h-px bg-gradient-to-r from-indigo-500/80 to-emerald-500/80 relative flex items-center justify-center">
+                {/* Nodo Conector Estático */}
+                <div className="absolute w-3 h-3 bg-white border-2 border-indigo-500/80 rounded-full shadow-sm" />
+              </div>
+            </div>
+          )}
 
-          {/* COLUMNA 1: Objetivo Principal (Nodo Raíz) */}
-          <div className="w-80 flex flex-col justify-center shrink-0 z-10">
-            <div className="bg-gradient-to-br from-indigo-900 to-slate-900 border border-slate-700/50 rounded-2xl p-6 shadow-2xl relative text-white flex flex-col items-center text-center">
-              
-              {/* Circular Progress Gauge */}
-              <div className="relative mb-5 flex items-center justify-center">
-                <svg className="w-24 h-24 transform -rotate-90">
-                  <circle cx="48" cy="48" r="40" stroke="#1e293b" strokeWidth="8" fill="transparent" />
-                  <circle 
-                    cx="48" 
-                    cy="48" 
-                    r="40" 
-                    stroke="#10b981" 
-                    strokeWidth="8" 
-                    fill="transparent"
-                    strokeDasharray={251.2}
-                    strokeDashoffset={251.2 - (251.2 * roadmap.pctg) / 100}
-                    strokeLinecap="round"
-                    className="transition-all duration-500"
-                  />
-                </svg>
-                <div className="absolute flex flex-col items-center justify-center">
-                  <span className="text-xl font-black">{roadmap.pctg}%</span>
-                  <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Meta</span>
+          {/* COLUMNA IZQUIERDA (NIVEL 1) */}
+          {!selectedCategoryId ? (
+            /* Root Goal */
+            <div className="w-72 flex flex-col justify-center shrink-0 z-10 animate-in fade-in slide-in-from-left-4 duration-300">
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 border border-slate-700/50 rounded-2xl p-6 shadow-2xl relative text-white flex flex-col items-center text-center">
+                
+                {/* Circular Progress Gauge */}
+                <div className="relative mb-5 flex items-center justify-center">
+                  <svg className="w-24 h-24 transform -rotate-90">
+                    <circle cx="48" cy="48" r="40" stroke="#1e293b" strokeWidth="8" fill="transparent" />
+                    <circle 
+                      cx="48" 
+                      cy="48" 
+                      r="40" 
+                      stroke="#10b981" 
+                      strokeWidth="8" 
+                      fill="transparent"
+                      strokeDasharray={251.2}
+                      strokeDashoffset={251.2 - (251.2 * roadmap.pctg) / 100}
+                      strokeLinecap="round"
+                      className="transition-all duration-500"
+                    />
+                  </svg>
+                  <div className="absolute flex flex-col items-center justify-center">
+                    <span className="text-xl font-black">{roadmap.pctg}%</span>
+                    <span className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Meta</span>
+                  </div>
                 </div>
+
+                <h2 className="text-base font-extrabold tracking-tight mb-2 leading-tight">
+                  {roadmap.name}
+                </h2>
+                <p className="text-[11px] text-gray-400 font-medium">Objetivo final de la ruta</p>
+              </div>
+            </div>
+          ) : (
+            /* Selected Category */
+            (() => {
+              const cat = getCategoriesList().find(c => c.id === selectedCategoryId);
+              if (!cat) return null;
+              
+              const catSubgoals = (roadmap.subgoals || []).filter(s => {
+                if (selectedCategoryId === 'uncategorized') {
+                  return !s.categoryId || !(roadmap.categories || []).some(c => c.id === s.categoryId);
+                }
+                return s.categoryId === selectedCategoryId;
+              });
+              const totalCatSteps = catSubgoals.reduce((acc, s) => acc + (s.steps?.length || 0), 0);
+              const completedCatSteps = catSubgoals.reduce((acc, s) => acc + (s.steps?.filter(st => st.completed).length || 0), 0);
+              const catPctg = totalCatSteps > 0 ? Math.round((completedCatSteps / totalCatSteps) * 100) : 0;
+
+              return (
+                <div className="w-72 flex flex-col justify-center shrink-0 z-10 animate-in fade-in slide-in-from-left-4 duration-300">
+                  <div className="bg-gradient-to-br from-indigo-950 to-slate-900 border border-slate-700/50 rounded-2xl p-6 shadow-2xl relative text-white flex flex-col items-center text-center">
+                    
+                    {/* Botón Volver */}
+                    <button
+                      onClick={() => setSelectedCategoryId(null)}
+                      className="mb-4 inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-gray-300 font-bold text-xs py-1.5 px-3 rounded-lg transition-colors border border-slate-700/50"
+                    >
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      Atrás
+                    </button>
+
+                    <span className="text-[10px] font-black text-indigo-400 uppercase tracking-wider mb-2">Categoría</span>
+                    
+                    {/* Circular Progress Gauge */}
+                    <div className="relative mb-5 flex items-center justify-center">
+                      <svg className="w-24 h-24 transform -rotate-90">
+                        <circle cx="48" cy="48" r="40" stroke="#1e293b" strokeWidth="8" fill="transparent" />
+                        <circle 
+                          cx="48" 
+                          cy="48" 
+                          r="40" 
+                          stroke="#10b981" 
+                          strokeWidth="8" 
+                          fill="transparent"
+                          strokeDasharray={251.2}
+                          strokeDashoffset={251.2 - (251.2 * catPctg) / 100}
+                          strokeLinecap="round"
+                          className="transition-all duration-500"
+                        />
+                      </svg>
+                      <div className="absolute flex flex-col items-center justify-center">
+                        <span className="text-xl font-black">{catPctg}%</span>
+                        <span className="text-[9px] text-gray-400 font-bold uppercase tracking-widest">Progreso</span>
+                      </div>
+                    </div>
+
+                    <h2 className="text-base font-extrabold tracking-tight mb-4 leading-tight">
+                      {cat.name}
+                    </h2>
+                  </div>
+                </div>
+              );
+            })()
+          )}
+
+          {/* COLUMNA DERECHA (NIVEL 2) */}
+          {!selectedCategoryId ? (
+            /* Categorías list */
+            <div className="flex-1 flex flex-col justify-between z-10 bg-slate-50 border border-indigo-500/20 rounded-3xl p-6 shadow-sm animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <h3 className="text-sm font-black text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Folder className="w-4 h-4 text-indigo-500" />
+                  Categorías
+                </h3>
+                <span className="text-[10px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
+                  {getCategoriesList().length}
+                </span>
               </div>
 
-              <h2 className="text-lg font-extrabold tracking-tight mb-4 leading-tight">
-                {roadmap.name}
-              </h2>
-              
-              {/* Botón / Input de Añadir Subobjetivo */}
-              {isAddingSubgoal ? (
-                <form onSubmit={handleAddSubgoal} className="w-full mt-2">
-                  <input
-                    type="text"
-                    placeholder="Nuevo subobjetivo..."
-                    value={newSubgoalName}
-                    onChange={(e) => setNewSubgoalName(e.target.value)}
-                    className="w-full text-sm bg-slate-800 border border-slate-700 focus:border-emerald-500 rounded-lg px-3 py-2 text-white focus:outline-none mb-2 placeholder-gray-500"
-                    autoFocus
-                  />
-                  <div className="flex gap-2 justify-end">
+              <div 
+                className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto max-h-[380px] p-1 pr-2 scrollbar-thin animate-in fade-in duration-300"
+              >
+                {getCategoriesList().length === 0 ? (
+                  <div className="col-span-full text-center py-12 text-gray-500 text-xs italic border border-dashed border-gray-300 rounded-xl bg-white/20">
+                    No hay categorías todavía. Crea una abajo para empezar.
+                  </div>
+                ) : (
+                  getCategoriesList().map((cat) => {
+                    const isSelected = selectedCategoryId === cat.id;
+                    
+                    // Calcular estadísticas de subobjetivos de esta categoría
+                    const catSubgoals = (roadmap.subgoals || []).filter(s => {
+                      if (cat.id === 'uncategorized') {
+                        return !s.categoryId || !(roadmap.categories || []).some(c => c.id === s.categoryId);
+                      }
+                      return s.categoryId === cat.id;
+                    });
+                    const totalCatSteps = catSubgoals.reduce((acc, s) => acc + (s.steps?.length || 0), 0);
+                    const completedCatSteps = catSubgoals.reduce((acc, s) => acc + (s.steps?.filter(st => st.completed).length || 0), 0);
+                    const catPctg = totalCatSteps > 0 ? Math.round((completedCatSteps / totalCatSteps) * 100) : 0;
+
+                    return (
+                      <div
+                        key={cat.id}
+                        id={`category-${cat.id}`}
+                        onClick={() => setSelectedCategoryId(cat.id)}
+                        className={`bg-white border rounded-xl p-4 shadow-sm relative group cursor-pointer transition-all duration-200 hover:shadow-md hover:border-indigo-300 flex flex-col justify-between min-h-[110px] ${
+                          isSelected 
+                            ? 'border-indigo-500 ring-2 ring-indigo-500/10 bg-indigo-50/10' 
+                            : 'border-slate-200/60 hover:border-indigo-200'
+                        }`}
+                      >
+                        {/* Header de Categoría */}
+                        <div className="flex justify-between items-start gap-2 mb-3">
+                          {editingCategoryId === cat.id ? (
+                            <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                value={editCategoryName}
+                                onChange={(e) => setEditCategoryName(e.target.value)}
+                                className="border border-indigo-400 rounded-lg px-2.5 py-1 w-full text-xs text-gray-800 font-bold focus:outline-none"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveRenameCategory(cat.id);
+                                  if (e.key === 'Escape') setEditingCategoryId(null);
+                                }}
+                              />
+                              <button
+                                onClick={() => saveRenameCategory(cat.id)}
+                                className="bg-indigo-500 text-white p-1.5 rounded-lg hover:bg-indigo-600 shrink-0"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingCategoryId(null)}
+                                className="bg-gray-100 text-gray-500 p-1.5 rounded-lg hover:bg-gray-200 shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <h4 className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2 pr-6">
+                                {cat.name}
+                              </h4>
+                              
+                              {cat.id !== 'uncategorized' && (
+                                <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/90 backdrop-blur rounded-lg p-0.5 shadow-sm border border-gray-100" onClick={e => e.stopPropagation()}>
+                                  <button
+                                    onClick={() => { setEditingCategoryId(cat.id); setEditCategoryName(cat.name); }}
+                                    className="p-1.5 text-gray-400 hover:text-indigo-600 rounded"
+                                    title="Renombrar categoría"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteCategory(cat.id)}
+                                    className="p-1.5 text-gray-400 hover:text-red-500 rounded"
+                                    title="Eliminar categoría"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </div>
+
+                        {/* Progreso de la categoría */}
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs font-medium text-slate-500 mb-1">
+                            <span>{catSubgoals.length} subobjetivos</span>
+                            <span className="text-indigo-600 font-semibold">{catPctg}%</span>
+                          </div>
+                          <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                            <div 
+                              className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-1.5 rounded-full transition-all duration-300"
+                              style={{ width: `${catPctg}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Añadir Categoría */}
+              <div className="mt-4 pt-3 border-t border-indigo-100/50">
+                {isAddingCategory ? (
+                  <form onSubmit={handleAddCategory} className="w-full flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nueva categoría..."
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      className="w-full text-xs border border-gray-300 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-gray-800 font-medium focus:outline-none"
+                      autoFocus
+                    />
+                    <button
+                      type="submit"
+                      disabled={!newCategoryName.trim()}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50 shrink-0"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Agregar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAddingCategory(false); setNewCategoryName(''); }}
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors shrink-0"
+                    >
+                      Cancelar
+                    </button>
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setIsAddingCategory(true)}
+                    className="w-full flex items-center justify-center gap-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs py-2 px-3 rounded-xl transition-all duration-300"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    Añadir Categoría
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            /* Subgoals list */
+            <div className="flex-1 flex flex-col justify-between z-10 bg-slate-50 border border-emerald-500/20 rounded-3xl p-6 shadow-sm animate-in fade-in slide-in-from-right-4 duration-300">
+              <div className="flex items-center justify-between mb-4 px-1">
+                <h3 className="text-sm font-black text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+                  <Target className="w-4 h-4 text-emerald-600" />
+                  Subobjetivos
+                </h3>
+                <span className="text-[10px] font-bold bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">
+                  {(roadmap.subgoals || []).filter(s => {
+                    if (selectedCategoryId === 'uncategorized') {
+                      return !s.categoryId || !(roadmap.categories || []).some(c => c.id === s.categoryId);
+                    }
+                    return s.categoryId === selectedCategoryId;
+                  }).length}
+                </span>
+              </div>
+
+              <div 
+                className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto max-h-[380px] p-1 pr-2 scrollbar-thin animate-in fade-in duration-300"
+              >
+                {((roadmap.subgoals || []).filter(s => {
+                  if (selectedCategoryId === 'uncategorized') {
+                    return !s.categoryId || !(roadmap.categories || []).some(c => c.id === s.categoryId);
+                  }
+                  return s.categoryId === selectedCategoryId;
+                })).length === 0 ? (
+                  <div className="col-span-full text-center py-12 text-gray-500 text-xs italic border border-dashed border-gray-300 rounded-xl bg-white/20">
+                    Sin subobjetivos en esta categoría. Crea uno abajo para empezar.
+                  </div>
+                ) : (
+                  (roadmap.subgoals || []).filter(s => {
+                    if (selectedCategoryId === 'uncategorized') {
+                      return !s.categoryId || !(roadmap.categories || []).some(c => c.id === s.categoryId);
+                    }
+                    return s.categoryId === selectedCategoryId;
+                  }).map((subgoal) => {
+                    const isSelected = selectedSubgoalId === subgoal.id;
+                    
+                    return (
+                      <div 
+                        key={subgoal.id}
+                        id={`subgoal-${subgoal.id}`}
+                        onClick={() => setSelectedSubgoalId(subgoal.id)}
+                        className={`bg-white border rounded-xl p-4 shadow-sm relative group cursor-pointer transition-all duration-200 hover:shadow-md hover:border-emerald-300 flex flex-col justify-between min-h-[110px] ${
+                          isSelected 
+                            ? 'border-emerald-500 ring-2 ring-emerald-500/10 bg-emerald-50/10' 
+                            : 'border-slate-200/60 hover:border-emerald-200'
+                        }`}
+                      >
+                        {/* Header Subobjetivo */}
+                        <div className="flex justify-between items-start gap-2 mb-2">
+                          {editingSubgoalId === subgoal.id ? (
+                            <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                value={editSubgoalName}
+                                onChange={(e) => setEditSubgoalName(e.target.value)}
+                                className="border border-indigo-400 rounded-lg px-2.5 py-1 w-full text-xs text-gray-800 font-bold focus:outline-none"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') saveRenameSubgoal(subgoal.id);
+                                  if (e.key === 'Escape') setEditingSubgoalId(null);
+                                }}
+                              />
+                              <button
+                                onClick={() => saveRenameSubgoal(subgoal.id)}
+                                className="bg-indigo-500 text-white p-1 rounded-lg hover:bg-indigo-600 shrink-0"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingSubgoalId(null)}
+                                className="bg-gray-100 text-gray-500 p-1.5 rounded-lg hover:bg-gray-200 shrink-0"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <>
+                              <h4 className="text-sm font-semibold text-slate-800 leading-snug line-clamp-2 pr-6">
+                                {subgoal.name}
+                              </h4>
+                              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/90 backdrop-blur rounded-lg p-0.5 shadow-sm border border-gray-100" onClick={e => e.stopPropagation()}>
+                                <button
+                                  onClick={() => { setEditingSubgoalId(subgoal.id); setEditSubgoalName(subgoal.name); }}
+                                  className="p-1.5 text-gray-400 hover:text-indigo-600 rounded"
+                                  title="Renombrar subobjetivo"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteSubgoal(subgoal.id)}
+                                  className="p-1.5 text-gray-400 hover:text-red-500 rounded"
+                                  title="Eliminar subobjetivo"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+
+                        {/* Info de progreso */}
+                        <div className="mt-2">
+                          <div className="mb-2">
+                            <div className="flex justify-between text-xs font-medium text-slate-500 mb-1">
+                              <span>Progreso</span>
+                              <span className="text-emerald-600 font-semibold">{subgoal.pctg}%</span>
+                            </div>
+                            <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-gradient-to-r from-emerald-500 to-emerald-600 h-1.5 rounded-full transition-all duration-300"
+                                style={{ width: `${subgoal.pctg}%` }}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                            <span>{(subgoal.steps || []).filter(s => s.completed).length}/{(subgoal.steps || []).length} Pasos</span>
+                            {subgoal.links && subgoal.links.length > 0 && (
+                              <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded-md font-extrabold normal-case text-[10px]">
+                                {subgoal.links.length} links
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Añadir Subobjetivo */}
+              <div className="mt-4 pt-3 border-t border-indigo-100/50">
+                {isAddingSubgoal ? (
+                  <form onSubmit={handleAddSubgoal} className="w-full flex items-center gap-2">
+                    <input
+                      type="text"
+                      placeholder="Nuevo subobjetivo..."
+                      value={newSubgoalName}
+                      onChange={(e) => setNewSubgoalName(e.target.value)}
+                      className="w-full text-xs border border-gray-300 focus:border-indigo-500 rounded-lg px-2.5 py-1.5 text-gray-800 font-medium focus:outline-none"
+                      autoFocus
+                    />
                     <button
                       type="submit"
                       disabled={!newSubgoalName.trim()}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors disabled:opacity-50 shrink-0"
                     >
                       <Check className="w-3.5 h-3.5" /> Agregar
                     </button>
                     <button
                       type="button"
                       onClick={() => { setIsAddingSubgoal(false); setNewSubgoalName(''); }}
-                      className="bg-slate-800 hover:bg-slate-700 text-gray-300 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                      className="bg-gray-100 hover:bg-gray-200 text-gray-600 font-semibold text-xs px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors shrink-0"
                     >
                       Cancelar
                     </button>
-                  </div>
-                </form>
-              ) : (
-                <button
-                  onClick={() => setIsAddingSubgoal(true)}
-                  className="mt-2 w-full flex items-center justify-center gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 px-4 rounded-xl transition-all duration-300 transform active:scale-95 shadow-md"
-                >
-                  <Plus className="w-4 h-4" />
-                  Añadir Subobjetivo
-                </button>
-              )}
-
-              {/* Conector Raíz a la derecha */}
-              <div 
-                id="root-connector" 
-                className="absolute right-0 top-1/2 transform translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-emerald-500 rounded-full border-2 border-white shadow-lg cursor-crosshair hover:scale-125 transition-transform"
-                title="Conector de meta principal"
-              />
+                  </form>
+                ) : (
+                  <button
+                    onClick={() => setIsAddingSubgoal(true)}
+                    className="w-full flex items-center justify-center gap-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs py-2 px-3 rounded-xl transition-all duration-300"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Añadir Subobjetivo
+                  </button>
+                )}
+              </div>
             </div>
-          </div>
-
-          {/* COLUMNA 2: Subobjetivos (Grid compacta) */}
-          <div className="flex-1 flex flex-col justify-center z-10">
-            {roadmap.subgoals?.length === 0 ? (
-              <div className="flex flex-col items-center justify-center text-center p-12 border-2 border-dashed border-gray-300/60 rounded-2xl bg-white/20 max-w-md mx-auto">
-                <Target className="w-12 h-12 text-indigo-400 mb-2 animate-pulse" />
-                <p className="text-gray-600 font-bold text-lg">Aún no hay subobjetivos</p>
-                <p className="text-gray-400 text-sm mt-1">
-                  {"Haz clic en \"+ Subobjetivo\" a la izquierda para subdividir tu meta principal en hitos."}
-                </p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 overflow-y-auto max-h-[550px] p-2">
-                {roadmap.subgoals.map((subgoal) => {
-                  const isSelected = selectedSubgoalId === subgoal.id;
-                  
-                  return (
-                    <div 
-                      key={subgoal.id}
-                      id={`subgoal-${subgoal.id}`}
-                      onClick={() => setSelectedSubgoalId(subgoal.id)}
-                      className={`bg-white border-2 rounded-2xl p-5 shadow-lg relative group cursor-pointer transition-all duration-300 transform hover:scale-[1.02] flex flex-col justify-between min-h-[140px] ${
-                        isSelected 
-                          ? 'border-indigo-500 ring-4 ring-indigo-500/10 bg-indigo-50/20 scale-[1.01]' 
-                          : 'border-white/80 hover:border-indigo-200'
-                      }`}
-                    >
-                      {/* Conector izquierdo */}
-                      <div 
-                        id={`subgoal-left-${subgoal.id}`}
-                        className="absolute left-0 top-1/2 transform -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-indigo-500 rounded-full border-2 border-white shadow-md z-10"
-                      />
-
-                      {/* Header Subobjetivo */}
-                      <div className="flex justify-between items-start gap-2 mb-3">
-                        {editingSubgoalId === subgoal.id ? (
-                          <div className="flex items-center gap-1 w-full" onClick={e => e.stopPropagation()}>
-                            <input
-                              type="text"
-                              value={editSubgoalName}
-                              onChange={(e) => setEditSubgoalName(e.target.value)}
-                              className="border border-indigo-400 rounded-lg px-2.5 py-1 w-full text-xs text-gray-800 font-bold focus:outline-none"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') saveRenameSubgoal(subgoal.id);
-                                if (e.key === 'Escape') setEditingSubgoalId(null);
-                              }}
-                            />
-                            <button
-                              onClick={() => saveRenameSubgoal(subgoal.id)}
-                              className="bg-indigo-500 text-white p-1.5 rounded-lg hover:bg-indigo-600 shrink-0"
-                            >
-                              <Check className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              onClick={() => setEditingSubgoalId(null)}
-                              className="bg-gray-100 text-gray-500 p-1.5 rounded-lg hover:bg-gray-200 shrink-0"
-                            >
-                              <X className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <h3 
-                              onClick={() => { setEditingSubgoalId(subgoal.id); setEditSubgoalName(subgoal.name); }}
-                              className={`text-sm font-bold leading-snug line-clamp-2 pr-6 hover:text-indigo-600 cursor-pointer ${
-                                isSelected ? 'text-indigo-800' : 'text-gray-800'
-                              }`}
-                            >
-                              {subgoal.name}
-                            </h3>
-                            <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity absolute right-2 top-2 bg-white/90 backdrop-blur rounded-lg p-0.5 shadow-sm border border-gray-100" onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={() => { setEditingSubgoalId(subgoal.id); setEditSubgoalName(subgoal.name); }}
-                                className="p-1.5 text-gray-400 hover:text-indigo-600 rounded"
-                                title="Renombrar subobjetivo"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSubgoal(subgoal.id)}
-                                className="p-1.5 text-gray-400 hover:text-red-500 rounded"
-                                title="Eliminar subobjetivo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-
-                      <div>
-                        {/* Progreso del Subobjetivo */}
-                        <div className="mb-2">
-                          <div className="flex justify-between text-[10px] font-bold text-gray-400 mb-0.5">
-                            <span>Progreso</span>
-                            <span className="text-indigo-600 font-black">{subgoal.pctg}%</span>
-                          </div>
-                          <div className="w-full bg-gray-200 h-1.5 rounded-full overflow-hidden">
-                            <div 
-                              className="bg-gradient-to-r from-indigo-500 to-indigo-600 h-1.5 rounded-full transition-all duration-300"
-                              style={{ width: `${subgoal.pctg}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Info adicional (Resource links & steps status) */}
-                        <div className="flex justify-between items-center text-[10px] text-gray-500 font-bold uppercase tracking-wider">
-                          <span>{(subgoal.steps || []).filter(s => s.completed).length}/{(subgoal.steps || []).length} Pasos</span>
-                          {subgoal.links && subgoal.links.length > 0 && (
-                            <span className="bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded-md font-extrabold normal-case">
-                              {subgoal.links.length} links
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
+          )}
         </div>
 
       </div>
@@ -759,13 +1005,28 @@ export default function GoalDetail() {
                   )}
                   
                   {/* Stats */}
-                  <div className="flex items-center gap-4 mt-3">
+                  <div className="flex flex-wrap items-center gap-3 mt-3">
                     <div className="flex items-center gap-1.5 text-xs text-gray-500 font-bold bg-indigo-50 border border-indigo-100 rounded-lg px-2.5 py-1">
                       <span>Progreso:</span>
                       <span className="text-indigo-600 font-black">{subgoal.pctg}%</span>
                     </div>
                     <div className="text-xs text-gray-400 font-bold">
                       {(subgoal.steps || []).filter(s => s.completed).length}/{(subgoal.steps || []).length} completados
+                    </div>
+                    <div className="flex items-center gap-1.5 ml-auto">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-wider">Categoría:</span>
+                      <select
+                        value={subgoal.categoryId || ''}
+                        onChange={(e) => handleMoveSubgoal(subgoal.id, e.target.value)}
+                        className="text-xs font-bold text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-2 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-500/20"
+                      >
+                        <option value="">Sin categoría</option>
+                        {(roadmap.categories || []).map((cat) => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                   </div>
                 </div>

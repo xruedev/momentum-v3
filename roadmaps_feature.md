@@ -44,7 +44,18 @@ Para mantener la consistencia del backend sin requerir cambios en las reglas de 
 | `pctg` | `number` | Progreso total (completados / total_pasos) * 100. |
 | `createdAt` | `string` | Timestamp ISO 8601 de creación. |
 | `updatedAt` | `string` | Timestamp ISO 8601 de última actualización. |
+| `categories` | `array` | Lista de categorías de subobjetivos en formato JSON. |
 | `subgoals` | `array` | Lista de subobjetivos en formato JSON. |
+
+#### Formato JSON del array `categories`
+```json
+[
+  {
+    "id": "category-uuid-1",
+    "name": "Frontend"
+  }
+]
+```
 
 #### Formato JSON del array `subgoals`
 ```json
@@ -52,6 +63,7 @@ Para mantener la consistencia del backend sin requerir cambios en las reglas de 
   {
     "id": "subgoal-uuid-1",
     "name": "Aprender React a nivel avanzado",
+    "categoryId": "category-uuid-1",
     "pctg": 50,
     "steps": [
       {
@@ -85,23 +97,27 @@ La funcionalidad se implementa a través de dos vistas principales interconectad
   * Botones para entrar al detalle, renombrar o eliminar.
 * Un botón destacado **"+ Crear Roadmap"** que despliega un diálogo simple para definir la meta final.
 
-### 2. Tablero de Roadmap Interactivo (Vista de Nodos)
-Una interfaz gráfica premium que visualiza la meta en forma de árbol de nodos conectados mediante líneas dinámicas SVGs:
+### 2. Tablero de Roadmap Interactivo (Vista de Nodos de 3 Columnas)
+Una interfaz gráfica premium que visualiza la meta en forma de árbol de nodos de 3 columnas conectados mediante líneas dinámicas SVGs:
 
 * **Columna 1: Nodo Raíz (Meta Principal)**
-  * Tarjeta de gran tamaño con fondo gradiente (`from-indigo-600 to-purple-600`), sombra difuminada y un indicador de progreso circular.
-  * Botón integrado **"+ Subobjetivo"** para añadir hitos principales rápidamente.
-* **Columna 2: Nodos de Subobjetivos**
-  * Tarjetas de estilo glassmorphism que muestran el nombre del subobjetivo, su barra de progreso y el número de pasos completados.
-  * Botón integrado **"+ Paso"** para añadir tareas secundarias.
-  * Menú contextual/iconos de edición al pasar el ratón para renombrar o eliminar.
-* **Columna 3: Nodos de Pasos**
-  * Tarjetas compactas con un checkbox personalizado. Al completarse, el fondo cambia de color (`bg-emerald-500/10` y borde verde) con una transición suave.
-  * El texto es editable al hacer clic en él para agilizar la administración del roadmap.
-  * Botón de eliminación en hover.
+  * Tarjeta de gran tamaño con fondo gradiente (`from-indigo-900 to-slate-900`), sombra difuminada y un indicador de progreso circular.
+  * Conector a la derecha que enlaza con todas las categorías de la Columna 2.
+* **Columna 2: Nodos de Categorías**
+  * Tarjetas de estilo glassmorphism que representan agrupaciones de subobjetivos.
+  * Muestran el nombre de la categoría, una barra de progreso calculada según sus subobjetivos, y botones para renombrar o eliminar.
+  * Un botón "+ Categoría" al final de la columna para crear nuevas categorías.
+  * Conector a la izquierda (que viene del nodo raíz) y a la derecha (que va hacia los subobjetivos cuando está seleccionada).
+* **Columna 3: Nodos de Subobjetivos**
+  * Solo visibles cuando hay una categoría seleccionada en la Columna 2. Si no hay selección, se muestra un placeholder explicativo.
+  * Tarjetas que muestran el nombre del subobjetivo, su barra de progreso y el número de pasos completados.
+  * Un botón "+ Subobjetivo" al final para añadir hitos a la categoría activa.
+  * Al hacer clic en un subobjetivo, se despliega un cajón lateral (Notion-style drawer) con sus notas, enlaces de recursos y listado de pasos.
 
 ### Conexión Dinámica por Nodos (SVG Canvas Overlay)
 Las conexiones se dibujan usando un canvas SVG absoluto superpuesto en segundo plano. 
-* Un script calcula las coordenadas de los bordes derecho e izquierdo de las tarjetas conectadas usando `getBoundingClientRect()` relativo al contenedor padre.
-* Las líneas se dibujan usando curvas Bézier cúbicas (`C`) con degradados lineales y brillo sutil para un acabado de alta gama.
-* Las conexiones que van hacia pasos o subobjetivos completados se iluminan en color verde (`#10b981`), mientras que las pendientes se muestran en un tono gris/índigo translúcido.
+* Un script calcula las coordenadas de los conectores usando `getBoundingClientRect()` relativo al contenedor padre.
+* Las líneas se dibujan usando curvas Bézier cúbicas (`C`) con degradados lineales y brillo sutil.
+* Las conexiones del nodo raíz a una categoría se iluminan en verde (`#10b981`) si todos sus subobjetivos están completados, y en gris/índigo si están pendientes.
+* Las conexiones de la categoría seleccionada a sus subobjetivos se iluminan en verde si el subobjetivo correspondiente está completo.
+* Las posiciones se recalculan automáticamente al redimensionar la ventana o realizar scroll en las columnas.
